@@ -6,8 +6,8 @@ const { exec } = require('child_process');
 
 const isWindows = os.platform() === 'win32';
 const DEFAULT_CONFIG_PATH = isWindows
-  ? path.join(os.homedir(), '.cloudflared', 'lootops-storage.yml')
-  : '/home/subhan/.cloudflared/lootops-storage.yml';
+  ? path.join(os.homedir(), '.cloudflared', 'deployments-config.yml')
+  : '/home/subhan/.cloudflared/deployments-config.yml';
 
 const CONFIG_PATH = process.env.CLOUDFLARE_TUNNEL_CONFIG || DEFAULT_CONFIG_PATH;
 
@@ -98,9 +98,8 @@ async function addRoute(hostname, port) {
   try {
     await restartTunnel();
   } catch (err) {
-    // Rollback
-    fs.writeFileSync(CONFIG_PATH, fileContent);
-    throw new Error(`Failed to restart tunnel, rolled back config. Error: ${err.message}`);
+    // Do not rollback if it's just a restart permission issue. The config is valid.
+    throw new Error(`Config saved, but failed to restart tunnel. Error: ${err.message}`);
   }
 }
 
@@ -139,8 +138,8 @@ async function deleteRoute(hostname) {
   try {
     await restartTunnel();
   } catch (err) {
-    fs.writeFileSync(CONFIG_PATH, fileContent);
-    throw new Error(`Failed to restart tunnel, rolled back config. Error: ${err.message}`);
+    // Do not rollback if it's just a restart permission issue.
+    throw new Error(`Config saved, but failed to restart tunnel. Error: ${err.message}`);
   }
 }
 
@@ -166,13 +165,10 @@ async function restartTunnel() {
       exec("pm2 restart tunnel", (err2) => {
         if (!err2) return resolve();
 
-        // Try cloudflared tunnel run as last resort
-        const tunnelName = process.env.CLOUDFLARE_TUNNEL_NAME || "lootops-storage";
-        exec(`cloudflared tunnel run ${tunnelName}`, (err3) => {
-          if (!err3) return resolve();
-          // If all restart methods fail, reject with clear message
-          reject(new Error(`Failed to restart tunnel: ${err3.message}. Config was updated but tunnel needs manual restart.`));
-        });
+        // If systemctl and pm2 fail, we cannot reliably restart a systemd service without sudo.
+        // DO NOT run `cloudflared tunnel run` synchronously here because it runs forever and hangs the deployment.
+        console.warn("Could not restart cloudflared via systemctl or pm2. Manual restart required.");
+        reject(new Error("Failed to restart tunnel automatically (requires sudo or PM2). Please run 'sudo systemctl restart cloudflared' manually."));
       });
     });
   });
