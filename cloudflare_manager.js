@@ -157,18 +157,18 @@ async function restartTunnel() {
       return;
     }
 
-    // Try systemctl first (systemd-managed cloudflared)
-    exec("sudo systemctl restart cloudflared", (err) => {
+    // First try pm2 restart tunnel (Since we now manage deployments tunnel via PM2)
+    exec("pm2 restart tunnel", (err) => {
       if (!err) return resolve();
 
-      // Try pm2 restart tunnel (PM2-managed cloudflared, named "tunnel")
-      exec("pm2 restart tunnel", (err2) => {
+      // Fallback: Try systemctl (systemd-managed cloudflared)
+      // Use sudo -n to prevent hanging on password prompt if sudo is not passwordless
+      exec("sudo -n systemctl restart cloudflared", (err2) => {
         if (!err2) return resolve();
 
         // If systemctl and pm2 fail, we cannot reliably restart a systemd service without sudo.
-        // DO NOT run `cloudflared tunnel run` synchronously here because it runs forever and hangs the deployment.
-        console.warn("Could not restart cloudflared via systemctl or pm2. Manual restart required.");
-        reject(new Error("Failed to restart tunnel automatically (requires sudo or PM2). Please run 'sudo systemctl restart cloudflared' manually."));
+        console.warn("Could not restart cloudflared via pm2 or systemctl. Manual restart required.");
+        reject(new Error("Failed to restart tunnel automatically (requires PM2 or passwordless sudo). Please run 'pm2 restart tunnel' manually."));
       });
     });
   });
