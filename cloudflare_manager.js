@@ -6,8 +6,8 @@ const { exec } = require('child_process');
 
 const isWindows = os.platform() === 'win32';
 const DEFAULT_CONFIG_PATH = isWindows 
-  ? path.join(os.homedir(), '.cloudflared', 'deployments-config.yml')
-  : '/home/subhan/.cloudflared/deployments-config.yml';
+  ? path.join(os.homedir(), '.cloudflared', 'lootops-storage-config.yml')
+  : '/home/subhan/.cloudflared/lootops-storage-config.yml';
 
 const CONFIG_PATH = process.env.CLOUDFLARE_TUNNEL_CONFIG || DEFAULT_CONFIG_PATH;
 
@@ -19,8 +19,8 @@ if (!fs.existsSync(configDir)) {
 
 // Create default file if it doesn't exist
 if (!fs.existsSync(CONFIG_PATH)) {
-  const defaultYaml = `tunnel: deployments
-credentials-file: /home/subhan/.cloudflared/b4dfff9c-8fe9-4f45-9242-07aedcdde479.json
+  const defaultYaml = `tunnel: efa5f037-2b60-4aa9-91f3-d9b1e4c489e5
+credentials-file: /home/subhan/.cloudflared/efa5f037-2b60-4aa9-91f3-d9b1e4c489e5.json
 
 ingress:
   - service: http_status:404
