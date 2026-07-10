@@ -504,10 +504,17 @@ async function getAllFilesAsync(dirPath, db, arrayOfFiles = []) {
     const files = await fsPromises.readdir(dirPath);
 
     for (const file of files) {
-      if (file === "db.json" || file === "_thumbnails" || file === "_trash") continue;
+      if (file === "db.json" || file === "_thumbnails" || file === "_trash" || file === "node_modules" || file === ".next" || file === ".git") continue;
 
       const fullPath = path.join(dirPath, file);
-      const stat = await fsPromises.stat(fullPath);
+      
+      let stat;
+      try {
+        stat = await fsPromises.stat(fullPath);
+      } catch (err) {
+        // Skip broken symlinks or unreadable files gracefully without breaking the entire directory scan
+        continue;
+      }
 
       if (stat.isDirectory()) {
         await getAllFilesAsync(fullPath, db, arrayOfFiles);
