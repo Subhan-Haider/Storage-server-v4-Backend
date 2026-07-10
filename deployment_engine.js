@@ -346,12 +346,15 @@ async function deployProject(projectId) {
            const appDirSrc = path.join(workingDir, 'src', 'app');
            const appDirRoot = path.join(workingDir, 'app');
            
-           [
-             path.join(appDirSrc, 'global-error.tsx'),
-             path.join(appDirSrc, 'global-error.jsx'),
-             path.join(appDirRoot, 'global-error.tsx'),
-             path.join(appDirRoot, 'global-error.jsx')
-           ].forEach(file => {
+           const exts = ['.tsx', '.jsx', '.ts', '.js'];
+           const filesToRemove = [];
+           
+           exts.forEach(ext => {
+             filesToRemove.push(path.join(appDirSrc, `global-error${ext}`));
+             filesToRemove.push(path.join(appDirRoot, `global-error${ext}`));
+           });
+           
+           filesToRemove.forEach(file => {
              if (fs.existsSync(file)) {
                appendLog(projectId, `Hotfix: Removing ${path.basename(file)} to bypass Next.js build bug`, "warn");
                fs.unlinkSync(file);
