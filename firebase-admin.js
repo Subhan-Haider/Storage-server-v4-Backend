@@ -3,7 +3,9 @@
  */
 const admin = require("firebase-admin");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env.local") });
+const fs = require("fs");
+const envPath = fs.existsSync(path.join(__dirname, ".env.local")) ? path.join(__dirname, ".env.local") : path.join(__dirname, "..", ".env.local");
+require("dotenv").config({ path: envPath });
 
 if (!admin.apps.length) {
   // Use environment variables for the service account credentials
