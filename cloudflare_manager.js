@@ -19,8 +19,8 @@ if (!fs.existsSync(configDir)) {
 
 // Create default file if it doesn't exist
 if (!fs.existsSync(CONFIG_PATH)) {
-  const defaultYaml = `tunnel: deployments
-credentials-file: /home/subhan/.cloudflared/b4dfff9c-8fe9-4f45-9242-07aedcdde479.json
+  const defaultYaml = `tunnel: deploye
+credentials-file: /home/subhan/.cloudflared/9e06ff7a-bfa7-4c32-b05b-71996231cd6c.json
 
 ingress:
   - service: http_status:404
