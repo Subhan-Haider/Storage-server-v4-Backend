@@ -55,7 +55,7 @@ GITHUB_CLIENT_SECRET=your_client_secret
 ### 4. Start the Server
 Run the API using PM2 so it stays alive in the background:
 ```bash
-pm2 start server.js --name server-backend
+pm2 start server.js --name cloud-backend
 pm2 save
 pm2 startup
 ```
