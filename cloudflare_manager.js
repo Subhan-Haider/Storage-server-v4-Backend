@@ -5,7 +5,7 @@ const yaml = require('yaml');
 const { exec } = require('child_process');
 
 const isWindows = os.platform() === 'win32';
-const DEFAULT_CONFIG_PATH = isWindows 
+const DEFAULT_CONFIG_PATH = isWindows
   ? path.join(os.homedir(), '.cloudflared', 'lootops-storage.yml')
   : '/home/subhan/.cloudflared/lootops-storage.yml';
 
@@ -19,8 +19,8 @@ if (!fs.existsSync(configDir)) {
 
 // Create default file if it doesn't exist
 if (!fs.existsSync(CONFIG_PATH)) {
-  const defaultYaml = `tunnel: lootops-storage
-credentials-file: /home/subhan/.cloudflared/efa5f037-2b60-4aa9-91f3-d9b1e4c489e5.json
+  const defaultYaml = `tunnel: deployments
+credentials-file: /home/subhan/.cloudflared/b4dfff9c-8fe9-4f45-9242-07aedcdde479.json
 
 ingress:
   - service: http_status:404
@@ -41,7 +41,7 @@ function validateConfig(doc) {
   if (!json.tunnel) throw new Error("Missing 'tunnel' key");
   if (!json['credentials-file']) throw new Error("Missing 'credentials-file' key");
   if (!Array.isArray(json.ingress)) throw new Error("'ingress' must be an array");
-  
+
   const lastRoute = json.ingress[json.ingress.length - 1];
   if (!lastRoute || lastRoute.service !== "http_status:404") {
     throw new Error("The last ingress route must be 'service: http_status:404'");
@@ -50,7 +50,7 @@ function validateConfig(doc) {
   // Check duplicates
   const hostnames = new Set();
   const ports = new Set();
-  
+
   for (const route of json.ingress) {
     if (route.hostname) {
       if (hostnames.has(route.hostname)) throw new Error(`Duplicate hostname found: ${route.hostname}`);
@@ -67,7 +67,7 @@ async function addRoute(hostname, port) {
   const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
   const doc = yaml.parseDocument(fileContent);
   const ingressNode = doc.get('ingress');
-  
+
   if (!ingressNode || !ingressNode.items) {
     throw new Error("Ingress section missing or invalid in config");
   }
@@ -88,13 +88,13 @@ async function addRoute(hostname, port) {
   validateConfig(doc);
 
   const newYaml = String(doc);
-  
+
   // Backup before writing
   const backupPath = `${CONFIG_PATH}.backup_${Date.now()}`;
   fs.writeFileSync(backupPath, fileContent);
-  
+
   fs.writeFileSync(CONFIG_PATH, newYaml);
-  
+
   try {
     await restartTunnel();
   } catch (err) {
@@ -108,7 +108,7 @@ async function deleteRoute(hostname) {
   const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
   const doc = yaml.parseDocument(fileContent);
   const ingressNode = doc.get('ingress');
-  
+
   if (!ingressNode || !ingressNode.items) {
     throw new Error("Ingress section missing or invalid in config");
   }
@@ -130,12 +130,12 @@ async function deleteRoute(hostname) {
   validateConfig(doc);
 
   const newYaml = String(doc);
-  
+
   const backupPath = `${CONFIG_PATH}.backup_${Date.now()}`;
   fs.writeFileSync(backupPath, fileContent);
-  
+
   fs.writeFileSync(CONFIG_PATH, newYaml);
-  
+
   try {
     await restartTunnel();
   } catch (err) {
@@ -157,15 +157,15 @@ async function restartTunnel() {
       setTimeout(resolve, 500);
       return;
     }
-    
+
     // Try systemctl first (systemd-managed cloudflared)
     exec("sudo systemctl restart cloudflared", (err) => {
       if (!err) return resolve();
-      
+
       // Try pm2 restart tunnel (PM2-managed cloudflared, named "tunnel")
       exec("pm2 restart tunnel", (err2) => {
         if (!err2) return resolve();
-        
+
         // Try cloudflared tunnel run as last resort
         const tunnelName = process.env.CLOUDFLARE_TUNNEL_NAME || "lootops-storage";
         exec(`cloudflared tunnel run ${tunnelName}`, (err3) => {
@@ -186,7 +186,7 @@ function getTunnelCname() {
       const tunnelId = path.basename(credFile, '.json');
       return `${tunnelId}.cfargotunnel.com`;
     }
-  } catch(e) {}
+  } catch (e) { }
   return "tunnel.lootops.me"; // fallback
 }
 
