@@ -153,7 +153,11 @@ async function checkPortAvailability(port) {
 async function executeCommand(command, cwd, projectId) {
   return new Promise((resolve, reject) => {
     appendLog(projectId, `Executing: ${command}`, "cmd");
-    const child = spawn(command, { cwd, shell: true });
+    const child = spawn(command, { 
+      cwd, 
+      shell: true,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    });
     
     child.stdout.on("data", (data) => {
       fs.appendFileSync(path.join(LOGS_DIR, `${projectId}.log`), data.toString());
