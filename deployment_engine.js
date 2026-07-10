@@ -19,7 +19,7 @@ function cpr(src, dest) {
 }
 
 const UPLOAD_PATH = process.env.UPLOAD_PATH || "/var/www/storage/uploads";
-const DEPLOYMENTS_DIR = path.join(UPLOAD_PATH, "deployments");
+const DEPLOYMENTS_DIR = process.env.DEPLOYMENTS_DIR || (isWindows ? path.join(UPLOAD_PATH, "Websites") : "/var/www/storage/Websites");
 const PROJECTS_DB_PATH = path.join(DEPLOYMENTS_DIR, "projects.json");
 const LOGS_DIR = path.join(DEPLOYMENTS_DIR, "logs");
 const BACKUPS_DIR = path.join(DEPLOYMENTS_DIR, "backups");
