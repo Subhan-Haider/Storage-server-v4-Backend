@@ -2,6 +2,9 @@
 
 This repository contains the standalone Express.js backend API for the LootOps Cloud platform. It handles file storage, media processing (images/video), database interactions, Firebase authentication verification, and CI/CD webhook deployments.
 
+> 🌐 **Looking for the User Interface?**
+> The Next.js frontend code is located in the main repository: [Storage-server-v4](https://github.com/Subhan-Haider/Storage-server-v4)
+
 ## ✨ Core Features
 - **File Management**: Upload, download, move, delete, and zip files.
 - **Media Processing**: Automatic image thumbnails via `sharp` and video compression via `ffmpeg`.
