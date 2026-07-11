@@ -194,43 +194,90 @@ async function runWatchdogCycle() {
 
   state.lastCheck = new Date().toISOString();
   let systemHealthy = true;
+  
+  // Reset daily attempts if a new day
+  const todayDate = new Date().toISOString().split("T")[0];
+  if (state.lastRecoveryDate !== todayDate) {
+    state.recoveryAttemptsToday = 0;
+    state.lastRecoveryDate = todayDate;
+  }
 
   try {
-    const internetOk = await checkInternet(state.config.pingTargets);
+    const internetOk = await checkInternet(state.config.pingTargets || []);
     state.network.internet = internetOk;
     
     if (!internetOk) {
       systemHealthy = false;
       state.liveStatus = "Critical";
-      await performNetworkRecovery(state);
       
-      const reCheck = await checkInternet(state.config.pingTargets);
-      if (reCheck) {
-        state.liveStatus = "Healthy";
-        appendLog("info", "network", "recovery_success", "Internet restored after recovery actions.");
-      } else {
-        if (state.config.rebootOnMaxFailures) {
+      if (state.recoveryAttemptsToday < (state.config.maxRecoveryAttempts || 3)) {
+        state.recoveryAttemptsToday += 1;
+        await performNetworkRecovery(state);
+        
+        const reCheck = await checkInternet(state.config.pingTargets || []);
+        if (reCheck) {
+          state.liveStatus = "Healthy";
+          appendLog("info", "network", "recovery_success", "Internet restored after recovery actions.");
+        } else if (state.config.rebootOnMaxFailures) {
           appendLog("critical", "system", "auto_reboot", "Internet completely offline. Auto-reboot triggered.");
           if (os.platform() !== 'win32') execCommand("sudo reboot");
         }
+      } else {
+        appendLog("critical", "network", "max_recovery_reached", "Internet offline. Max recovery attempts reached.");
       }
     }
 
-    for (const service of state.config.services) {
+    const services = state.config.services || [];
+    for (const service of services) {
       const isActive = await checkServiceStatus(service);
       state.services[service] = isActive;
       
       if (!isActive) {
         systemHealthy = false;
-        appendLog("warning", "service", "service_stopped", `Service ${service} is down.`);
-        const restarted = await restartService(service);
-        if (restarted) {
-          appendLog("info", "service", "recovery_success", `Service ${service} restarted successfully.`);
-          state.services[service] = true;
+        
+        if (state.recoveryAttemptsToday < (state.config.maxRecoveryAttempts || 3)) {
+          state.recoveryAttemptsToday += 1;
+          appendLog("warning", "service", "service_stopped", `Service ${service} is down. Attempting restart...`);
+          const restarted = await restartService(service);
+          if (restarted) {
+            appendLog("info", "service", "recovery_success", `Service ${service} restarted successfully.`);
+            state.services[service] = true;
+          } else {
+            appendLog("critical", "service", "recovery_failed", `Failed to restart service ${service}.`);
+          }
         } else {
-          appendLog("critical", "service", "recovery_failed", `Failed to restart service ${service}.`);
+          appendLog("critical", "service", "max_recovery_reached", `Service ${service} is down. Max recovery attempts reached.`);
         }
       }
+    }
+
+    // Monitor PM2 deployments
+    try {
+      const deploymentEngine = require("./deployment_engine");
+      const projects = deploymentEngine.readProjects();
+      const res = await execCommand("pm2 jlist");
+      let pm2List = [];
+      if (res.success) {
+        try { pm2List = JSON.parse(res.output); } catch(e) {}
+      }
+      for (const project of projects) {
+        if (project.status === "running") {
+          const pm2Process = pm2List.find(p => p.name === project.id);
+          const isOnline = pm2Process && pm2Process.pm2_env && pm2Process.pm2_env.status === "online";
+          if (!isOnline) {
+            systemHealthy = false;
+            if (state.recoveryAttemptsToday < (state.config.maxRecoveryAttempts || 3)) {
+              state.recoveryAttemptsToday += 1;
+              appendLog("warning", "deployment", "deployment_crashed", `Deployment ${project.name} is down. Attempting restart...`);
+              await execCommand(`pm2 restart ${project.id}`);
+            } else {
+              appendLog("critical", "deployment", "max_recovery_reached", `Deployment ${project.name} is down. Max recovery attempts reached.`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error monitoring PM2 deployments:", e);
     }
 
     const stats = await getStats();
@@ -255,8 +302,8 @@ function startWatchdog() {
   if (watchdogInterval) clearInterval(watchdogInterval);
   
   runWatchdogCycle();
-  watchdogInterval = setInterval(runWatchdogCycle, state.config.checkIntervalMs);
-  console.log(`[Watchdog] Started with interval ${state.config.checkIntervalMs}ms`);
+  watchdogInterval = setInterval(runWatchdogCycle, state.config.checkIntervalMs || 30000);
+  console.log(`[Watchdog] Started with interval ${state.config.checkIntervalMs || 30000}ms`);
 }
 
 function stopWatchdog() {
