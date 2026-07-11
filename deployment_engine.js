@@ -215,9 +215,19 @@ async function detectFramework(projectPath) {
 // Cloudflare integration replaces Nginx
 const cloudflareManager = require('./cloudflare_manager');
 
+const activeDeployments = new Set();
+
 async function deployProject(projectId) {
+  if (activeDeployments.has(projectId)) {
+    throw new Error("A deployment is already in progress for this project.");
+  }
+  activeDeployments.add(projectId);
+
   const project = getProject(projectId);
-  if (!project) throw new Error("Project not found");
+  if (!project) {
+    activeDeployments.delete(projectId);
+    throw new Error("Project not found");
+  }
 
   try {
     updateProject(projectId, { status: "building" });
@@ -454,6 +464,7 @@ async function deployProject(projectId) {
       lastDeployment: new Date().toISOString() 
     });
     appendLog(projectId, `Deployment successful!`, "success");
+    activeDeployments.delete(projectId);
 
   } catch (err) {
     appendLog(projectId, `Deployment failed: ${err.message}`, "error");
@@ -466,6 +477,7 @@ async function deployProject(projectId) {
     }
     
     updateProject(projectId, { status: "failed" });
+    activeDeployments.delete(projectId);
     throw err;
   }
 }
