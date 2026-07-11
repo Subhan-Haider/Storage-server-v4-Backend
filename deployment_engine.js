@@ -407,9 +407,9 @@ async function deployProject(projectId) {
     if (!startCmd) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
-        startCmd = `npx serve -s ${outDir} -l ${port}`;
+        startCmd = `npx -y serve -s ${outDir} -l ${port}`;
       } else if (framework === "astro") {
-        startCmd = `npx serve -s dist -l ${port}`;
+        startCmd = `npx -y serve -s dist -l ${port}`;
       } else if (framework === "node" || framework === "express") {
         try {
           const pkg = require(path.join(liveWorkingDir, "package.json"));
@@ -418,7 +418,7 @@ async function deployProject(projectId) {
           startCmd = "node index.js";
         }
       } else if (framework === "static") {
-        startCmd = `npx serve . -l ${port}`;
+        startCmd = `npx -y serve . -l ${port}`;
       } else {
         startCmd = "npm start";
       }
