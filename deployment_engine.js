@@ -407,9 +407,9 @@ async function deployProject(projectId) {
     if (!startCmd) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
-        startCmd = `npx -y serve -s ${outDir} -l ${port}`;
+        startCmd = `npx -y serve -s ${outDir} -l tcp://0.0.0.0:${port}`;
       } else if (framework === "astro") {
-        startCmd = `npx -y serve -s dist -l ${port}`;
+        startCmd = `npx -y serve -s dist -l tcp://0.0.0.0:${port}`;
       } else if (framework === "node" || framework === "express") {
         try {
           const pkg = require(path.join(liveWorkingDir, "package.json"));
@@ -418,7 +418,7 @@ async function deployProject(projectId) {
           startCmd = "node index.js";
         }
       } else if (framework === "static") {
-        startCmd = `npx -y serve . -l ${port}`;
+        startCmd = `npx -y serve . -l tcp://0.0.0.0:${port}`;
       } else {
         startCmd = "npm start";
       }
@@ -426,19 +426,24 @@ async function deployProject(projectId) {
 
     await executeCommand(`pm2 delete ${projectId}`, liveWorkingDir, projectId).catch(()=>{});
     
-    const pm2WrapperCode = `
-const { spawn } = require('child_process');
-const customEnv = ${JSON.stringify(envVars)};
-const child = spawn(${JSON.stringify(startCmd)}, { 
-  stdio: 'inherit', 
-  shell: true, 
-  env: { ...process.env, ...customEnv } 
-});
-child.on('close', code => process.exit(code));
-    `;
-    fs.writeFileSync(path.join(liveWorkingDir, "pm2-wrapper.js"), pm2WrapperCode);
+    // Instead of a wrapper script, run the command directly through PM2.
+    // Parse the command into executable and args.
+    const [execCmd, ...args] = startCmd.split(" ");
+    const argsStr = args.join(" ");
     
-    await executeCommand(`pm2 start pm2-wrapper.js --name ${projectId} --update-env`, liveWorkingDir, projectId);
+    // Write custom env to ecosystem.config.js to cleanly pass environment variables
+    const ecosystemCode = `module.exports = {
+      apps: [{
+        name: "${projectId}",
+        script: "${execCmd}",
+        args: "${argsStr}",
+        cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
+        env: ${JSON.stringify(envVars)}
+      }]
+    };`;
+    fs.writeFileSync(path.join(liveWorkingDir, "ecosystem.config.js"), ecosystemCode);
+    
+    await executeCommand(`pm2 start ecosystem.config.js`, liveWorkingDir, projectId);
     await executeCommand(`pm2 save`, liveWorkingDir, projectId);
 
     // 6. Cloudflare Tunnel
