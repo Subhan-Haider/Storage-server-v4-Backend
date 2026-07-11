@@ -426,11 +426,10 @@ async function deployProject(projectId) {
 
     await executeCommand(`pm2 delete ${projectId}`, liveWorkingDir, projectId).catch(()=>{});
     
-    const [cmdStr, ...argsArr] = startCmd.split(" ");
     const pm2WrapperCode = `
 const { spawn } = require('child_process');
 const customEnv = ${JSON.stringify(envVars)};
-const child = spawn('${cmdStr}', ${JSON.stringify(argsArr)}, { 
+const child = spawn(${JSON.stringify(startCmd)}, { 
   stdio: 'inherit', 
   shell: true, 
   env: { ...process.env, ...customEnv } 
