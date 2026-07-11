@@ -341,7 +341,11 @@ async function deployProject(projectId) {
       
       if (framework !== "node" && framework !== "express") {
          appendLog(projectId, `Building project...`, "info");
-
+         
+         // Clear Next.js cache to avoid invariant errors during incremental builds
+         if (framework === 'nextjs') {
+           try { rmrf(path.join(workingDir, ".next")); } catch(e) {}
+         }
 
          // DO NOT catch the error. If build fails, it will skip Atomic Swap and throw to the catch block!
          const buildCmd = project.buildCmd || "npm run build";
