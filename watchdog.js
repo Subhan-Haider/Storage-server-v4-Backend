@@ -253,6 +253,10 @@ async function runWatchdogCycle() {
 
     // Monitor PM2 deployments
     try {
+      // DEBUG: Dump PM2 logs
+      const debugLog = await execCommand("pm2 logs 1bbbffe0-2906-4b40-8898-ad052e1c437b --lines 100 --nostream");
+      require("fs").writeFileSync(require("path").join(UPLOAD_PATH, "pm2-debug.txt"), debugLog.output || "no output");
+
       const deploymentEngine = require("./deployment_engine");
       const projects = deploymentEngine.readProjects();
       const res = await execCommand("pm2 jlist");
