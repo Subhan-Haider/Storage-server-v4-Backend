@@ -355,6 +355,24 @@ async function deployProject(projectId) {
          // Clear Next.js cache to avoid invariant errors during incremental builds
          if (framework === 'nextjs') {
            try { rmrf(path.join(workingDir, ".next")); } catch(e) {}
+           
+           // Hotfix: Next.js 16 Turbopack crashes when prerendering internal _global-error.
+           // Creating a minimal client-side global-error file bypasses the bug.
+           const appDir = fs.existsSync(path.join(workingDir, 'src', 'app')) 
+             ? path.join(workingDir, 'src', 'app') 
+             : fs.existsSync(path.join(workingDir, 'app')) 
+               ? path.join(workingDir, 'app') 
+               : null;
+               
+           if (appDir) {
+             const hasGlobalError = fs.existsSync(path.join(appDir, 'global-error.tsx')) || 
+                                    fs.existsSync(path.join(appDir, 'global-error.jsx')) || 
+                                    fs.existsSync(path.join(appDir, 'global-error.js'));
+             if (!hasGlobalError) {
+               fs.writeFileSync(path.join(appDir, 'global-error.jsx'), `'use client';\nexport default function GlobalError({error, reset}) { return (<html><body><h2>Something went wrong!</h2><button onClick={() => reset()}>Try again</button></body></html>); }`);
+               appendLog(projectId, `Hotfix: Injected global-error.jsx to bypass Next.js build bug`, "warn");
+             }
+           }
          }
 
          // DO NOT catch the error. If build fails, it will skip Atomic Swap and throw to the catch block!
