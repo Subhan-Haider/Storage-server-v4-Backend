@@ -431,7 +431,7 @@ async function deployProject(projectId) {
     const [execCmd, ...args] = startCmd.split(" ");
     const argsStr = args.join(" ");
     
-    // Write custom env to ecosystem.config.js to cleanly pass environment variables
+    // Write custom env to ecosystem.config.cjs to cleanly pass environment variables
     const ecosystemCode = `module.exports = {
       apps: [{
         name: "${projectId}",
@@ -441,9 +441,9 @@ async function deployProject(projectId) {
         env: ${JSON.stringify(envVars)}
       }]
     };`;
-    fs.writeFileSync(path.join(liveWorkingDir, "ecosystem.config.js"), ecosystemCode);
+    fs.writeFileSync(path.join(liveWorkingDir, "ecosystem.config.cjs"), ecosystemCode);
     
-    await executeCommand(`pm2 start ecosystem.config.js`, liveWorkingDir, projectId);
+    await executeCommand(`pm2 start ecosystem.config.cjs`, liveWorkingDir, projectId);
     await executeCommand(`pm2 save`, liveWorkingDir, projectId);
 
     // 6. Cloudflare Tunnel
