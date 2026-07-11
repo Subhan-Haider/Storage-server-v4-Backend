@@ -341,26 +341,7 @@ async function deployProject(projectId) {
       
       if (framework !== "node" && framework !== "express") {
          appendLog(projectId, `Building project...`, "info");
-         // Hotfix: Next.js 15/16 known bug with global-error and Turbopack
-         if (framework === 'nextjs') {
-           const appDirSrc = path.join(workingDir, 'src', 'app');
-           const appDirRoot = path.join(workingDir, 'app');
-           
-           const exts = ['.tsx', '.jsx', '.ts', '.js'];
-           const filesToRemove = [];
-           
-           exts.forEach(ext => {
-             filesToRemove.push(path.join(appDirSrc, `global-error${ext}`));
-             filesToRemove.push(path.join(appDirRoot, `global-error${ext}`));
-           });
-           
-           filesToRemove.forEach(file => {
-             if (fs.existsSync(file)) {
-               appendLog(projectId, `Hotfix: Removing ${path.basename(file)} to bypass Next.js build bug`, "warn");
-               fs.unlinkSync(file);
-             }
-           });
-         }
+
 
          // DO NOT catch the error. If build fails, it will skip Atomic Swap and throw to the catch block!
          const buildCmd = project.buildCmd || "npm run build";
