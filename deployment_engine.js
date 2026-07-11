@@ -346,6 +346,10 @@ async function deployProject(projectId) {
     // 4. Install & Build inside TEMP DIR
     if (["nextjs", "react", "vue", "vite", "express", "node", "astro"].includes(framework)) {
       appendLog(projectId, `Installing dependencies...`, "info");
+      
+      // Ensure clean node_modules to avoid Turbopack/symlink caching bugs
+      try { rmrf(path.join(workingDir, "node_modules")); } catch(e) {}
+      
       const installCmd = project.installCmd || "npm install --legacy-peer-deps";
       await executeCommand(installCmd, workingDir, projectId);
       
