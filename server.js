@@ -4833,6 +4833,20 @@ app.post("/api/watchdog/action", requireAuth, (req, res) => {
   } else if (action === "restart_service" && service) {
     exec(`sudo systemctl restart ${service}`);
     return res.json({ success: true, message: `Service ${service} restart initiated` });
+  } else if (action === "update_backend") {
+    const backendDir = __dirname;
+    res.json({ success: true, message: "Backend update started. Server will restart in a few seconds." });
+    setTimeout(() => {
+      exec(`cd "${backendDir}" && git pull origin main`, (err, stdout, stderr) => {
+        if (err) { console.error("[self-update] git pull failed:", stderr || err.message); return; }
+        console.log("[self-update] git pull:", stdout);
+        exec("pm2 restart cloud-backend", (err2) => {
+          if (err2) console.error("[self-update] pm2 restart failed:", err2.message);
+          else console.log("[self-update] cloud-backend restarted.");
+        });
+      });
+    }, 300);
+    return;
   }
   res.status(400).json({ error: "Invalid action" });
 });
