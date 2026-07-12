@@ -4838,6 +4838,27 @@ app.post("/api/watchdog/action", requireAuth, (req, res) => {
 });
 
 // =====================
+// SERVER SELF-UPDATE
+// =====================
+app.post("/api/server/update", requireAuth, (req, res) => {
+  const backendDir = __dirname;
+  res.json({ success: true, message: "Update started. Server will restart shortly." });
+  setTimeout(() => {
+    exec(`cd "${backendDir}" && git pull origin main`, (err, stdout, stderr) => {
+      if (err) {
+        console.error("[self-update] git pull failed:", stderr || err.message);
+        return;
+      }
+      console.log("[self-update] git pull success:", stdout);
+      exec("pm2 restart cloud-backend", (err2) => {
+        if (err2) console.error("[self-update] pm2 restart failed:", err2.message);
+        else console.log("[self-update] cloud-backend restarted successfully.");
+      });
+    });
+  }, 500);
+});
+
+// =====================
 // START
 // =====================
 const server = app.listen(PORT, "0.0.0.0", () => {
