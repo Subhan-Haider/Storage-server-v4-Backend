@@ -4705,7 +4705,16 @@ app.get("/api/github/login", (req, res) => {
   if (!clientId) {
     return res.status(500).send("GITHUB_CLIENT_ID is not configured in .env.local");
   }
-  const redirectUri = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,admin:repo_hook`;
+  
+  const proto = req.headers['x-forwarded-proto'] || (req.headers.host && req.headers.host.includes('localhost') ? 'http' : 'https');
+  let host = req.headers['x-forwarded-host'] || req.headers.host;
+  if (host && host.includes(':5000')) host = host.replace(':5000', ':3000');
+  
+  const callbackUrl = process.env.FRONTEND_URL 
+    ? `${process.env.FRONTEND_URL}/api/github/callback` 
+    : `${proto}://${host}/api/github/callback`;
+
+  const redirectUri = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=repo,admin:repo_hook`;
   res.redirect(redirectUri);
 });
 
@@ -4717,10 +4726,11 @@ app.get("/api/github/callback", async (req, res) => {
 
   try {
     await githubIntegrations.exchangeCodeForToken(code);
-    // Use the request host to redirect back to the correct domain
-    // This works even if the GitHub App callback URL points to a different domain
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    
+    const proto = req.headers['x-forwarded-proto'] || (req.headers.host && req.headers.host.includes('localhost') ? 'http' : 'https');
+    let host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (host && host.includes(':5000')) host = host.replace(':5000', ':3000');
+    
     const frontendUrl = process.env.FRONTEND_URL || `${proto}://${host}`;
     res.redirect(`${frontendUrl}/deployments?github_connected=true`);
   } catch (err) {

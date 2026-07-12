@@ -424,7 +424,13 @@ async function deployProject(projectId) {
     if (!startCmd) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
-        startCmd = `npx -y serve -s ${outDir} -l tcp://0.0.0.0:${port}`;
+        if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.cjs"))) {
+          startCmd = `node ${outDir}/server.cjs`;
+        } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
+          startCmd = `node ${outDir}/server.js`;
+        } else {
+          startCmd = `npx -y serve -s ${outDir} -l tcp://0.0.0.0:${port}`;
+        }
       } else if (framework === "astro") {
         startCmd = `npx -y serve -s dist -l tcp://0.0.0.0:${port}`;
       } else if (framework === "node" || framework === "express") {
