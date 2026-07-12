@@ -416,7 +416,7 @@ async function deployProject(projectId) {
     appendLog(projectId, `Starting application with PM2...`, "info");
     
     // Create .env file for the app
-    const envVars = { ...project.env, PORT: port };
+    const envVars = { NODE_ENV: "production", ...project.env, PORT: port };
     const envString = Object.entries(envVars).map(([k,v]) => `${k}=${v}`).join("\n");
     fs.writeFileSync(path.join(liveWorkingDir, ".env"), envString);
 
@@ -425,9 +425,9 @@ async function deployProject(projectId) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
         if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.cjs"))) {
-          startCmd = `node ${outDir}/server.cjs`;
+          startCmd = `${outDir}/server.cjs`;
         } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
-          startCmd = `node ${outDir}/server.js`;
+          startCmd = `${outDir}/server.js`;
         } else {
           startCmd = `npx -y serve -s ${outDir} -l tcp://0.0.0.0:${port}`;
         }
