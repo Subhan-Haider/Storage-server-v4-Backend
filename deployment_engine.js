@@ -481,36 +481,25 @@ async function deployProject(projectId) {
 
     let ecosystemCode;
     
-    // PM2 on Windows struggles with executing .cmd files directly, so we use a node wrapper
-    if (os.platform() === 'win32') {
-      const runnerCode = `
-const { spawn } = require('child_process');
-const proc = spawn(${JSON.stringify(startCmd)}, [], { stdio: 'inherit', shell: true });
-proc.on('exit', code => process.exit(code));
+    // PM2 treats the `script` field as a Node.js module path, NOT a shell command.
+    // Setting script: "npx" makes it try to require("npx") which fails on restart.
+    // Fix: Always use a small Node.js runner that spawns the command with shell:true.
+    const runnerCode = `const { spawn } = require('child_process');
+const proc = spawn(${JSON.stringify(startCmd)}, [], { stdio: 'inherit', shell: true, cwd: __dirname });
+proc.on('exit', code => process.exit(code || 0));
 process.on('SIGINT', () => proc.kill('SIGINT'));
 process.on('SIGTERM', () => proc.kill('SIGTERM'));
-      `;
-      fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
-      
-      ecosystemCode = `module.exports = {
-        apps: [{
-          name: "${projectId}",
-          script: "pm2-runner.js",
-          cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
-          env: ${JSON.stringify(envVars)}
-        }]
-      };`;
-    } else {
-      ecosystemCode = `module.exports = {
-        apps: [{
-          name: "${projectId}",
-          script: "${execCmd}",
-          args: "${argsStr}",
-          cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
-          env: ${JSON.stringify(envVars)}
-        }]
-      };`;
-    }
+`;
+    fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
+    
+    const ecosystemCode = `module.exports = {
+      apps: [{
+        name: "${projectId}",
+        script: "pm2-runner.js",
+        cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
+        env: ${JSON.stringify(envVars)}
+      }]
+    };`;
 
     fs.writeFileSync(path.join(liveWorkingDir, "ecosystem.config.cjs"), ecosystemCode);
     
