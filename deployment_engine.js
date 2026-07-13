@@ -456,10 +456,10 @@ async function deployProject(projectId) {
         } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
           startCmd = `${outDir}/server.js`;
         } else {
-          startCmd = `npx -y serve -s ${outDir} -l tcp://0.0.0.0:${port}`;
+          startCmd = `npx -y serve -s ${outDir} -p ${port}`;
         }
       } else if (framework === "astro") {
-        startCmd = `npx -y serve -s dist -l tcp://0.0.0.0:${port}`;
+        startCmd = `npx -y serve -s dist -p ${port}`;
       } else if (framework === "node" || framework === "express") {
         try {
           const pkg = require(path.join(liveWorkingDir, "package.json"));
@@ -468,7 +468,7 @@ async function deployProject(projectId) {
           startCmd = "node index.js";
         }
       } else if (framework === "static") {
-        startCmd = `npx -y serve . -l tcp://0.0.0.0:${port}`;
+        startCmd = `npx -y serve . -p ${port}`;
       } else {
         startCmd = "npm start";
       }
@@ -476,26 +476,42 @@ async function deployProject(projectId) {
 
     await executeCommand(`pm2 delete ${projectId}`, liveWorkingDir, projectId).catch(()=>{});
     
-    // Use a small Node wrapper to run the command. This completely avoids PM2's Windows
-    // command execution bugs (where it tries to parse .cmd files as Javascript).
-    const runnerCode = `
+    let [execCmd, ...args] = startCmd.split(" ");
+    let argsStr = args.join(" ");
+
+    let ecosystemCode;
+    
+    // PM2 on Windows struggles with executing .cmd files directly, so we use a node wrapper
+    if (os.platform() === 'win32') {
+      const runnerCode = `
 const { spawn } = require('child_process');
 const proc = spawn(${JSON.stringify(startCmd)}, [], { stdio: 'inherit', shell: true });
 proc.on('exit', code => process.exit(code));
 process.on('SIGINT', () => proc.kill('SIGINT'));
 process.on('SIGTERM', () => proc.kill('SIGTERM'));
-    `;
-    fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
-    
-    // Write custom env to ecosystem.config.cjs to cleanly pass environment variables
-    const ecosystemCode = `module.exports = {
-      apps: [{
-        name: "${projectId}",
-        script: "pm2-runner.js",
-        cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
-        env: ${JSON.stringify(envVars)}
-      }]
-    };`;
+      `;
+      fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
+      
+      ecosystemCode = `module.exports = {
+        apps: [{
+          name: "${projectId}",
+          script: "pm2-runner.js",
+          cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
+          env: ${JSON.stringify(envVars)}
+        }]
+      };`;
+    } else {
+      ecosystemCode = `module.exports = {
+        apps: [{
+          name: "${projectId}",
+          script: "${execCmd}",
+          args: "${argsStr}",
+          cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
+          env: ${JSON.stringify(envVars)}
+        }]
+      };`;
+    }
+
     fs.writeFileSync(path.join(liveWorkingDir, "ecosystem.config.cjs"), ecosystemCode);
     
     await executeCommand(`pm2 start ecosystem.config.cjs`, liveWorkingDir, projectId);
