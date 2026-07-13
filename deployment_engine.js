@@ -457,8 +457,17 @@ async function deployProject(projectId) {
         const hijackerCode = `const net = require('net');
 const originalListen = net.Server.prototype.listen;
 net.Server.prototype.listen = function(...args) {
+  const dynamicPort = process.env.PORT;
   if (typeof args[0] === 'number' || (typeof args[0] === 'string' && !isNaN(args[0]))) {
-    args[0] = process.env.PORT || args[0];
+    if (args[0] != dynamicPort) {
+      console.warn('[CLOUD-BACKEND WARNING] Your server tried to bind to hardcoded port ' + args[0] + '. We automatically changed it to ' + dynamicPort + ' to prevent a 502 Bad Gateway crash! Please update your code to use process.env.PORT.');
+      args[0] = dynamicPort;
+    }
+  } else if (args[0] && typeof args[0] === 'object' && args[0].port) {
+    if (args[0].port != dynamicPort) {
+      console.warn('[CLOUD-BACKEND WARNING] Your server tried to bind to hardcoded port ' + args[0].port + ' via an object. We automatically changed it to ' + dynamicPort + ' to prevent a crash! Please update your code to use process.env.PORT.');
+      args[0].port = dynamicPort;
+    }
   }
   return originalListen.apply(this, args);
 };`;
@@ -466,6 +475,10 @@ net.Server.prototype.listen = function(...args) {
 
         const cjsPath = path.join(liveWorkingDir, outDir, "server.cjs");
         const jsPath = path.join(liveWorkingDir, outDir, "server.js");
+
+        if (fs.existsSync(cjsPath) || fs.existsSync(jsPath)) {
+          appendLog(projectId, `Detected custom server script. Ensure it listens on process.env.PORT instead of a hardcoded port like 3000 to prevent 502 Bad Gateway errors.`, "warn");
+        }
 
         if (fs.existsSync(cjsPath)) {
           startCmd = `node -r ./port-hijacker.cjs ${outDir}/server.cjs`;
