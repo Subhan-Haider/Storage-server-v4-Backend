@@ -488,12 +488,12 @@ proc.on('exit', code => process.exit(code || 0));
 process.on('SIGINT', () => proc.kill('SIGINT'));
 process.on('SIGTERM', () => proc.kill('SIGTERM'));
 `;
-    fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
+    fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.cjs"), runnerCode);
     
     const ecosystemCode = `module.exports = {
       apps: [{
         name: "${projectId}",
-        script: "pm2-runner.js",
+        script: "pm2-runner.cjs",
         cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
         env: ${JSON.stringify(envVars)}
       }]
