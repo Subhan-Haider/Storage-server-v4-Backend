@@ -453,20 +453,24 @@ async function deployProject(projectId) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
         
-        // Auto-patch hardcoded ports to use process.env.PORT
+        // Bulletproof port hijacker using Node.js preload script
+        const hijackerCode = `const net = require('net');
+const originalListen = net.Server.prototype.listen;
+net.Server.prototype.listen = function(...args) {
+  if (typeof args[0] === 'number' || (typeof args[0] === 'string' && !isNaN(args[0]))) {
+    args[0] = process.env.PORT || args[0];
+  }
+  return originalListen.apply(this, args);
+};`;
+        fs.writeFileSync(path.join(liveWorkingDir, "port-hijacker.cjs"), hijackerCode);
+
         const cjsPath = path.join(liveWorkingDir, outDir, "server.cjs");
         const jsPath = path.join(liveWorkingDir, outDir, "server.js");
-        if (fs.existsSync(cjsPath) || fs.existsSync(jsPath)) {
-          const targetPath = fs.existsSync(cjsPath) ? cjsPath : jsPath;
-          let code = fs.readFileSync(targetPath, 'utf8');
-          code = code.replace(/\.listen\(\s*(\d+)/g, ".listen(process.env.PORT || $1");
-          fs.writeFileSync(targetPath, code);
-        }
 
         if (fs.existsSync(cjsPath)) {
-          startCmd = `node ${outDir}/server.cjs`;
+          startCmd = `node -r ./port-hijacker.cjs ${outDir}/server.cjs`;
         } else if (fs.existsSync(jsPath)) {
-          startCmd = `node ${outDir}/server.js`;
+          startCmd = `node -r ./port-hijacker.cjs ${outDir}/server.js`;
         } else {
           startCmd = `npm install serve && ./node_modules/.bin/serve -s ${outDir} -p ${port}`;
         }
