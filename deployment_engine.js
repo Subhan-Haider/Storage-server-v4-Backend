@@ -477,10 +477,7 @@ async function deployProject(projectId) {
     await executeCommand(`pm2 delete ${projectId}`, liveWorkingDir, projectId).catch(()=>{});
     
     let [execCmd, ...args] = startCmd.split(" ");
-    let argsStr = args.join(" ");
 
-    let ecosystemCode;
-    
     // PM2 treats the `script` field as a Node.js module path, NOT a shell command.
     // Setting script: "npx" makes it try to require("npx") which fails on restart.
     // Fix: Always use a small Node.js runner that spawns the command with shell:true.
