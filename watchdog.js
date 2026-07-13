@@ -253,10 +253,6 @@ async function runWatchdogCycle() {
 
     // Monitor PM2 deployments
     try {
-      // DEBUG: Dump PM2 logs
-      const debugLog = await execCommand("pm2 logs 1bbbffe0-2906-4b40-8898-ad052e1c437b --lines 100 --nostream");
-      require("fs").writeFileSync(require("path").join(UPLOAD_PATH, "pm2-debug.txt"), debugLog.output || "no output");
-
       const deploymentEngine = require("./deployment_engine");
       const projects = deploymentEngine.readProjects();
       const res = await execCommand("pm2 jlist");
@@ -264,6 +260,23 @@ async function runWatchdogCycle() {
       if (res.success) {
         try { pm2List = JSON.parse(res.output); } catch(e) {}
       }
+
+      // ─── SELF-HEAL: Restart the main backend if it has crashed ───────────────
+      const BACKEND_PM2_NAME = "cloud-backend";
+      const backendProc = pm2List.find(p => p.name === BACKEND_PM2_NAME);
+      const backendOnline = backendProc && backendProc.pm2_env && backendProc.pm2_env.status === "online";
+      if (!backendOnline) {
+        systemHealthy = false;
+        appendLog("critical", "backend", "backend_crashed", `Main backend process "${BACKEND_PM2_NAME}" is down! Attempting auto-restart via PM2...`);
+        const restartRes = await execCommand(`pm2 restart ${BACKEND_PM2_NAME}`);
+        if (restartRes.success) {
+          appendLog("info", "backend", "backend_recovered", `Main backend "${BACKEND_PM2_NAME}" was successfully restarted by watchdog.`);
+        } else {
+          appendLog("critical", "backend", "backend_recovery_failed", `Failed to restart "${BACKEND_PM2_NAME}": ${restartRes.output}`);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       for (const project of projects) {
         if (project.status === "running") {
           const pm2Process = pm2List.find(p => p.name === project.id);
