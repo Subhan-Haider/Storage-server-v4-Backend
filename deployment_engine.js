@@ -452,9 +452,20 @@ async function deployProject(projectId) {
     if (!startCmd) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
-        if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.cjs"))) {
+        
+        // Auto-patch hardcoded ports to use process.env.PORT
+        const cjsPath = path.join(liveWorkingDir, outDir, "server.cjs");
+        const jsPath = path.join(liveWorkingDir, outDir, "server.js");
+        if (fs.existsSync(cjsPath) || fs.existsSync(jsPath)) {
+          const targetPath = fs.existsSync(cjsPath) ? cjsPath : jsPath;
+          let code = fs.readFileSync(targetPath, 'utf8');
+          code = code.replace(/\.listen\(\s*(\d+)/g, ".listen(process.env.PORT || $1");
+          fs.writeFileSync(targetPath, code);
+        }
+
+        if (fs.existsSync(cjsPath)) {
           startCmd = `node ${outDir}/server.cjs`;
-        } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
+        } else if (fs.existsSync(jsPath)) {
           startCmd = `node ${outDir}/server.js`;
         } else {
           startCmd = `npm install serve && ./node_modules/.bin/serve -s ${outDir} -p ${port}`;
