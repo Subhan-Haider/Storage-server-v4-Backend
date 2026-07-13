@@ -56,7 +56,7 @@ function validateConfig(doc) {
       if (hostnames.has(route.hostname)) throw new Error(`Duplicate hostname found: ${route.hostname}`);
       hostnames.add(route.hostname);
     }
-    if (route.service && route.service.startsWith("http://localhost:")) {
+    if (route.service && (route.service.startsWith("http://localhost:") || route.service.startsWith("http://127.0.0.1:"))) {
       const port = route.service.split(":")[2];
       ports.add(port);
     }
@@ -78,7 +78,7 @@ async function addRoute(hostname, port) {
 
   const newRoute = doc.createNode({
     hostname: hostname,
-    service: `http://localhost:${port}`
+    service: `http://127.0.0.1:${port}`
   });
 
   // Insert before the last item (which should be http_status:404)
