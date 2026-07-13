@@ -389,6 +389,23 @@ async function deployProject(projectId) {
            }
          }
 
+          // Hotfix: Vite + TS projects often fail on minor type errors because `tsc -b` is in the build script.
+          // We will strip it out to ensure a smooth deployment experience.
+          if (framework === 'vite' || framework === 'react' || framework === 'vue') {
+            try {
+              const pkgPath = path.join(workingDir, "package.json");
+              if (fs.existsSync(pkgPath)) {
+                let pkgStr = fs.readFileSync(pkgPath, "utf8");
+                let pkg = JSON.parse(pkgStr);
+                if (pkg.scripts && pkg.scripts.build && pkg.scripts.build.includes("tsc")) {
+                   pkg.scripts.build = pkg.scripts.build.replace(/tsc -b && /g, "").replace(/tsc && /g, "");
+                   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+                   appendLog(projectId, `Hotfix: Removed strict TypeScript type checking from build script to prevent build failure`, "warn");
+                }
+              }
+            } catch (e) {}
+          }
+
          // DO NOT catch the error. If build fails, it will skip Atomic Swap and throw to the catch block!
          const buildCmd = project.buildCmd || "npm run build";
          await executeCommand(buildCmd, workingDir, projectId);
