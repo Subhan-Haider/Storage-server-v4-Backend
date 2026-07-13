@@ -93,7 +93,8 @@ function createProject(data) {
     rootDir: data.rootDir || "",
     installCmd: data.installCmd || "",
     buildCmd: data.buildCmd || "",
-    startCmd: data.startCmd || ""
+    startCmd: data.startCmd || "",
+    rawContent: data.rawContent || ""
   };
   projects.push(newProject);
   writeProjects(projects);
@@ -245,7 +246,7 @@ async function deployProject(projectId) {
       cpr(projectDir, tempDir);
     }
 
-    // 1. Git Clone or Pull (in TEMP DIR)
+    // 1. Fetch Source Code (Git Clone/Pull OR Raw Content)
     let repoUrl = sanitizeRepoUrl(project.repository);
     const githubIntegrations = require('./github_integrations');
     const token = githubIntegrations.getGithubToken();
@@ -254,32 +255,38 @@ async function deployProject(projectId) {
       cloneUrl = cloneUrl.replace("https://github.com/", `https://${token}@github.com/`);
     }
 
-    if (!fs.existsSync(path.join(tempDir, ".git"))) {
-      appendLog(projectId, `Cloning repository: ${repoUrl}...`, "info");
-      try {
-        await executeCommand(`git clone -b ${project.branch} ${cloneUrl} ${projectId}_temp`, APPS_DIR, projectId);
-      } catch (cloneErr) {
-        if (cloneErr.message && (cloneErr.message.includes("403") || cloneErr.message.includes("access") || cloneErr.message.includes("not granted"))) {
-          appendLog(projectId, `Token-based clone failed. Trying public clone...`, "warn");
-          try {
-            await executeCommand(`git clone -b ${project.branch} ${repoUrl} ${projectId}_temp`, APPS_DIR, projectId);
-          } catch (pubErr) {
-            throw new Error(`Cannot access repository. This may be a private repo.\nFix: Go to Settings → Git Integration → click 'Connect GitHub' to refresh your token.`);
-          }
-        } else {
-          throw cloneErr;
-        }
-      }
+    if (project.repository === "raw") {
+      appendLog(projectId, `Creating raw static deployment...`, "info");
+      fs.mkdirSync(tempDir, { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "index.html"), project.rawContent || "<h1>Hello World</h1>");
     } else {
-      appendLog(projectId, `Pulling latest changes from ${project.branch} into temp directory...`, "info");
-      try {
-        await executeCommand(`git fetch origin`, tempDir, projectId);
-        await executeCommand(`git checkout ${project.branch}`, tempDir, projectId);
-        await executeCommand(`git pull ${cloneUrl} ${project.branch}`, tempDir, projectId);
-      } catch (err) {
-        appendLog(projectId, `Failed to switch/pull branch, performing fresh clone...`, "warn");
-        try { rmrf(tempDir); } catch(e) {}
-        await executeCommand(`git clone -b ${project.branch} ${cloneUrl} ${projectId}_temp`, APPS_DIR, projectId);
+      if (!fs.existsSync(path.join(tempDir, ".git"))) {
+        appendLog(projectId, `Cloning repository: ${repoUrl}...`, "info");
+        try {
+          await executeCommand(`git clone -b ${project.branch} ${cloneUrl} ${projectId}_temp`, APPS_DIR, projectId);
+        } catch (cloneErr) {
+          if (cloneErr.message && (cloneErr.message.includes("403") || cloneErr.message.includes("access") || cloneErr.message.includes("not granted"))) {
+            appendLog(projectId, `Token-based clone failed. Trying public clone...`, "warn");
+            try {
+              await executeCommand(`git clone -b ${project.branch} ${repoUrl} ${projectId}_temp`, APPS_DIR, projectId);
+            } catch (pubErr) {
+              throw new Error(`Cannot access repository. This may be a private repo.\nFix: Go to Settings → Git Integration → click 'Connect GitHub' to refresh your token.`);
+            }
+          } else {
+            throw cloneErr;
+          }
+        }
+      } else {
+        appendLog(projectId, `Pulling latest changes from ${project.branch} into temp directory...`, "info");
+        try {
+          await executeCommand(`git fetch origin`, tempDir, projectId);
+          await executeCommand(`git checkout ${project.branch}`, tempDir, projectId);
+          await executeCommand(`git pull ${cloneUrl} ${project.branch}`, tempDir, projectId);
+        } catch (err) {
+          appendLog(projectId, `Failed to switch/pull branch, performing fresh clone...`, "warn");
+          try { rmrf(tempDir); } catch(e) {}
+          await executeCommand(`git clone -b ${project.branch} ${cloneUrl} ${projectId}_temp`, APPS_DIR, projectId);
+        }
       }
     }
 
@@ -331,7 +338,10 @@ async function deployProject(projectId) {
     }
 
     // 2. Framework Detection
-    const framework = await detectFramework(workingDir);
+    let framework = "static";
+    if (project.repository !== "raw") {
+      framework = await detectFramework(workingDir);
+    }
     updateProject(projectId, { framework });
     appendLog(projectId, `Detected framework: ${framework} in ${workingDir}`, "info");
 
