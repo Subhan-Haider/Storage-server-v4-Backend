@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+// SYNCTOOL-FORCE-UPDATE: This comment forces the file to be synced to the backend repo.
 const { exec, spawn } = require("child_process");
 const os = require("os");
 const crypto = require("crypto");
