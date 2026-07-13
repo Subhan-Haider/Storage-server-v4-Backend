@@ -459,17 +459,22 @@ async function deployProject(projectId) {
 
     await executeCommand(`pm2 delete ${projectId}`, liveWorkingDir, projectId).catch(()=>{});
     
-    // Instead of a wrapper script, run the command directly through PM2.
-    // Parse the command into executable and args.
-    const [execCmd, ...args] = startCmd.split(" ");
-    const argsStr = args.join(" ");
+    // Use a small Node wrapper to run the command. This completely avoids PM2's Windows
+    // command execution bugs (where it tries to parse .cmd files as Javascript).
+    const runnerCode = `
+const { spawn } = require('child_process');
+const proc = spawn(${JSON.stringify(startCmd)}, [], { stdio: 'inherit', shell: true });
+proc.on('exit', code => process.exit(code));
+process.on('SIGINT', () => proc.kill('SIGINT'));
+process.on('SIGTERM', () => proc.kill('SIGTERM'));
+    `;
+    fs.writeFileSync(path.join(liveWorkingDir, "pm2-runner.js"), runnerCode);
     
     // Write custom env to ecosystem.config.cjs to cleanly pass environment variables
     const ecosystemCode = `module.exports = {
       apps: [{
         name: "${projectId}",
-        script: "${execCmd}",
-        args: "${argsStr}",
+        script: "pm2-runner.js",
         cwd: "${liveWorkingDir.replace(/\\/g, '/')}",
         env: ${JSON.stringify(envVars)}
       }]
