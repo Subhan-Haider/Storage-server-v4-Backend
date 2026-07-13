@@ -8,6 +8,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { exec, spawn } = require("child_process");
 const archiver = require("archiver");
+const { fixWithAI } = require("./ai_engine");
 const nodemailer = require("nodemailer");
 const admin = require("./firebase-admin");
 const cookieParser = require("cookie-parser");
@@ -45,7 +46,8 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // =====================
 // CONFIG
@@ -223,7 +225,8 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "x-api-key", "Authorization", "x-mfa-token"]
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // RATE LIMITER (Uploads & Admin actions)
 const apiLimiter = rateLimit({
@@ -4545,6 +4548,57 @@ app.get("/api/deployments/logs/:id", (req, res) => {
   req.on('close', () => {
     watcher.close();
   });
+});
+// AI Auto-Fix Endpoints
+app.get("/api/settings/ai", requireAuth, (req, res) => {
+  const db = readDb();
+  if (!db.settings) db.settings = {};
+  if (!db.settings.ai) db.settings.ai = { provider: "openrouter", model: "google/gemini-2.5-flash", apiKey: "" };
+  res.json({ success: true, aiSettings: db.settings.ai });
+});
+
+app.get("/api/settings/ai/ollama-models", requireAuth, async (req, res) => {
+  try {
+    const axios = require('axios');
+    const response = await axios.get('http://127.0.0.1:11434/api/tags');
+    res.json({ success: true, models: response.data.models.map(m => m.name) });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to connect to Ollama. Is it running on localhost:11434?" });
+  }
+});
+
+app.post("/api/settings/ai", requireAuth, (req, res) => {
+  const db = readDb();
+  if (!db.settings) db.settings = {};
+  db.settings.ai = req.body.settings;
+  writeDb(db);
+  res.json({ success: true, message: "AI settings saved successfully." });
+});
+
+app.post("/api/deployments/fix/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { logs } = req.body;
+  const project = deploymentEngine.getProject(id);
+  const db = readDb();
+  const aiSettings = db.settings?.ai || { provider: "openrouter", model: "google/gemini-2.5-flash", apiKey: "" };
+  
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  if (aiSettings.provider === 'openrouter' && !aiSettings.apiKey) {
+    return res.status(400).json({ error: "OpenRouter API key is missing. Please configure it in AI Settings." });
+  }
+
+  try {
+    const liveDir = path.join(deploymentEngine.WEBSITES_DIR, id);
+    const fixResult = await fixWithAI(id, logs || "", liveDir, aiSettings);
+    
+    // Automatically trigger a redeploy after applying the fix
+    deploymentEngine.startDeployment(id);
+
+    res.json({ success: true, fix: fixResult });
+  } catch (error) {
+    console.error("Auto-Fix failed:", error);
+    res.status(500).json({ error: error.message || "Failed to run AI auto-fix." });
+  }
 });
 
 app.post("/api/deployments/webhook", (req, res) => {
