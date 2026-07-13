@@ -453,9 +453,9 @@ async function deployProject(projectId) {
       if (framework === "react" || framework === "vue" || framework === "vite") {
         const outDir = fs.existsSync(path.join(liveWorkingDir, "build")) ? "build" : "dist";
         if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.cjs"))) {
-          startCmd = `${outDir}/server.cjs`;
+          startCmd = `node ${outDir}/server.cjs`;
         } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
-          startCmd = `${outDir}/server.js`;
+          startCmd = `node ${outDir}/server.js`;
         } else {
           startCmd = `npm install serve && ./node_modules/.bin/serve -s ${outDir} -p ${port}`;
         }
