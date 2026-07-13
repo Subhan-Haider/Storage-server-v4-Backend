@@ -457,10 +457,10 @@ async function deployProject(projectId) {
         } else if (fs.existsSync(path.join(liveWorkingDir, outDir, "server.js"))) {
           startCmd = `${outDir}/server.js`;
         } else {
-          startCmd = `npx -y serve -s ${outDir} -p ${port}`;
+          startCmd = `npm install serve && ./node_modules/.bin/serve -s ${outDir} -p ${port}`;
         }
       } else if (framework === "astro") {
-        startCmd = `npx -y serve -s dist -p ${port}`;
+        startCmd = `npm install serve && ./node_modules/.bin/serve -s dist -p ${port}`;
       } else if (framework === "node" || framework === "express") {
         try {
           const pkg = require(path.join(liveWorkingDir, "package.json"));
