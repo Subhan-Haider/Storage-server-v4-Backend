@@ -4878,6 +4878,9 @@ app.post("/api/server/update", requireAuth, (req, res) => {
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("Storage Admin API running on port", PORT);
   watchdog.startWatchdog();
+  if (cloudflareManager && cloudflareManager.autoFixLocalhost) {
+    cloudflareManager.autoFixLocalhost();
+  }
 });
 
 // Prevent 502 Bad Gateway errors for long/large uploads

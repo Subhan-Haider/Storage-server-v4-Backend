@@ -63,6 +63,45 @@ function validateConfig(doc) {
   }
 }
 
+async function autoFixLocalhost() {
+  try {
+    const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const doc = yaml.parseDocument(fileContent);
+    const ingressNode = doc.get('ingress');
+    if (ingressNode && ingressNode.items) {
+      let changed = false;
+      let hasStorageRoute = false;
+      ingressNode.items.forEach(item => {
+        if (item.has('hostname') && item.get('hostname') === 'storage.subhan.tech') {
+          hasStorageRoute = true;
+        }
+        if (item.has('service')) {
+          let svc = item.get('service');
+          if (typeof svc === 'string' && svc.startsWith('http://localhost:')) {
+            item.set('service', svc.replace('http://localhost:', 'http://127.0.0.1:'));
+            changed = true;
+          }
+        }
+      });
+      if (!hasStorageRoute) {
+        const newRoute = doc.createNode({
+          hostname: 'storage.subhan.tech',
+          service: 'http://127.0.0.1:5000'
+        });
+        ingressNode.items.splice(ingressNode.items.length - 1, 0, newRoute);
+        changed = true;
+      }
+      if (changed) {
+        fs.writeFileSync(CONFIG_PATH, String(doc), 'utf8');
+        console.log("Auto-fixed localhost to 127.0.0.1 in Cloudflare config.");
+        await restartTunnel().catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.error("Failed to auto-fix localhost:", e);
+  }
+}
+
 async function addRoute(hostname, port) {
   const fileContent = fs.readFileSync(CONFIG_PATH, 'utf8');
   const doc = yaml.parseDocument(fileContent);
@@ -194,5 +233,6 @@ module.exports = {
   getRoutes,
   restartTunnel,
   getTunnelCname,
+  autoFixLocalhost,
   CONFIG_PATH
 };
