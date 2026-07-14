@@ -807,7 +807,7 @@ app.post("/admin/rescan-files", requireAuth, async (req, res) => {
 // FILE SERVING ROUTE
 // =====================
 app.get(/^\/file-serve\/(.*)/, async (req, res) => {
-  const fullPath = req.params[0];
+  const fullPath = decodeURIComponent(req.params[0]);
   const parts = fullPath.split("/");
   if (parts.length < 1) return res.status(404).json({ error: "Invalid path" });
   const name = parts.pop();
@@ -905,7 +905,7 @@ app.get(/^\/file-serve\/(.*)/, async (req, res) => {
 
 // Explicit download attachment endpoint
 app.get(/^\/file-download\/(.*)/, async (req, res) => {
-  const fullPath = req.params[0];
+  const fullPath = decodeURIComponent(req.params[0]);
   const parts = fullPath.split("/");
   if (parts.length < 1) return res.status(404).json({ error: "Invalid path" });
   const name = parts.pop();
