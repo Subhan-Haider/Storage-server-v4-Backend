@@ -4167,6 +4167,10 @@ app.delete("/api/users/:email", requireSuperAdmin, async (req, res) => {
   const targetEmail = req.params.email;
   const dbData = readDb();
   
+  if (targetEmail === "setupg98@gmail.com") {
+    return res.status(403).json({ error: "The primary owner account cannot be deleted." });
+  }
+
   if (targetEmail === req.user.email) {
     return res.status(400).json({ error: "You cannot delete your own account." });
   }
@@ -4198,6 +4202,10 @@ app.put("/api/users/:email/role", requireSuperAdmin, (req, res) => {
   
   if (!["super_admin", "admin", "home_member", "guest"].includes(role)) {
     return res.status(400).json({ error: "Invalid role." });
+  }
+
+  if (targetEmail === "setupg98@gmail.com" && role !== "super_admin") {
+    return res.status(403).json({ error: "The primary owner account must remain a super admin." });
   }
   
   const dbData = readDb();
