@@ -250,7 +250,7 @@ const DB_PATH = path.join(UPLOAD_PATH, "db.json");
 
 function readDb() {
   const defaultDb = {
-    files: {}, logs: [], shares: {}, users: {}, folders: {}, trash: {}, webhookUrl: "", mfaCodes: {}, analytics: { totalUploads: 0, totalDownloads: 0, dailyStats: {} }, settings: { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], notificationsEnabled: true, customBaseUrl: "" }
+    files: {}, logs: [], shares: {}, users: {}, invites: {}, folders: {}, trash: {}, webhookUrl: "", mfaCodes: {}, analytics: { totalUploads: 0, totalDownloads: 0, dailyStats: {} }, settings: { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], notificationsEnabled: true, customBaseUrl: "" }
   };
   if (!fs.existsSync(DB_PATH)) {
     return defaultDb;
@@ -261,6 +261,7 @@ function readDb() {
     if (!data.logs) data.logs = [];
     if (!data.shares) data.shares = {};
     if (!data.users) data.users = {};
+    if (!data.invites) data.invites = {};
     if (!data.folders) data.folders = {};
     if (!data.trash) data.trash = {};
     if (!data.webhookUrl) data.webhookUrl = "";
@@ -278,6 +279,23 @@ function readDb() {
       onDownload: false,
       onShare: true,
     };
+
+    // Auto-migrate legacy allowedEmails to the new users object as super_admins
+    if (data.settings.allowedEmails && Array.isArray(data.settings.allowedEmails)) {
+      let migrated = false;
+      data.settings.allowedEmails.forEach(email => {
+        if (!data.users[email]) {
+          data.users[email] = {
+            email: email,
+            role: "super_admin",
+            createdAt: new Date().toISOString()
+          };
+          migrated = true;
+        }
+      });
+      // We don't delete allowedEmails yet, just in case they downgrade.
+    }
+
     return data;
   } catch (e) {
     return defaultDb;
@@ -350,18 +368,15 @@ const requireAuth = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    
-    // Dynamic authorized emails from db.json (with hardcoded fallback)
     const dbData = readDb();
-    const authorizedEmails = dbData.settings?.allowedEmails?.length
-      ? dbData.settings.allowedEmails
-      : ["setupg98@gmail.com", "support@subhan.tech"];
+    const userRecord = dbData.users[decoded.email];
 
-    if (!authorizedEmails.includes(decoded.email)) {
+    if (!userRecord) {
       console.warn(`Unauthorized login attempt from: ${decoded.email}`);
       return res.status(403).json({ error: "Email not authorized", email: decoded.email });
     }
 
+    req.userRole = userRecord.role;
     req.user = decoded;
 
     // --- 2FA ENFORCEMENT ---
@@ -398,6 +413,24 @@ const requireAuth = async (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ error: "Invalid Firebase token" });
   }
+};
+
+const requireSuperAdmin = (req, res, next) => {
+  requireAuth(req, res, () => {
+    if (req.userRole !== "super_admin") {
+      return res.status(403).json({ error: "Super Admin privileges required." });
+    }
+    next();
+  });
+};
+
+const requireAdmin = (req, res, next) => {
+  requireAuth(req, res, () => {
+    if (req.userRole !== "super_admin" && req.userRole !== "admin") {
+      return res.status(403).json({ error: "Admin privileges required." });
+    }
+    next();
+  });
 };
 
 // =====================
@@ -3881,15 +3914,30 @@ const requireUserAuth = async (req, res, next) => {
   }
 };
 
-// POST /auth/register — Create new user account (open registration)
+// POST /auth/register — Create new user account (requires invite token)
 app.post("/auth/register", async (req, res) => {
-  const { email, password, name, metadata } = req.body;
+  const { email, password, name, metadata, inviteToken } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters" });
   }
+
+  let assignedRole = "super_admin";
+  const dbData = readDb();
+  
+  if (Object.keys(dbData.users).length > 0) {
+    if (!inviteToken) {
+      return res.status(403).json({ error: "An invite token is required to register on this server." });
+    }
+    const invite = dbData.invites[inviteToken];
+    if (!invite) {
+      return res.status(403).json({ error: "Invalid or expired invite token." });
+    }
+    assignedRole = invite.role;
+  }
+
   try {
     const userRecord = await admin.auth().createUser({
       email,
@@ -3905,11 +3953,23 @@ app.post("/auth/register", async (req, res) => {
       email: userRecord.email,
       name: name || "",
       avatar: "",
-      role: "user",
+      role: assignedRole,
       createdAt: new Date().toISOString(),
       lastLogin: null,
       metadata: metadata || {},
     });
+
+    // Store role in local db.json
+    const updatedDb = readDb();
+    updatedDb.users[email] = {
+      email: email,
+      role: assignedRole,
+      createdAt: new Date().toISOString()
+    };
+    if (inviteToken && updatedDb.invites[inviteToken]) {
+      delete updatedDb.invites[inviteToken]; // Consume the one-time token
+    }
+    writeDb(updatedDb);
 
     // Send email verification
     try {
@@ -4052,10 +4112,117 @@ app.get("/auth/me", requireUserAuth, async (req, res) => {
     if (!doc.exists) {
       return res.status(404).json({ error: "User profile not found." });
     }
-    res.json({ success: true, profile: doc.data() });
+    
+    const dbData = readDb();
+    const userRecord = dbData.users[req.user.email];
+    const profileData = doc.data();
+    
+    // Inject true RBAC role from db.json into the profile response
+    if (userRecord) {
+      profileData.role = userRecord.role;
+    }
+
+    res.json({ success: true, profile: profileData });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch profile." });
   }
+});
+
+// =====================
+// RBAC & USER MANAGEMENT
+// =====================
+
+app.post("/api/invites/generate", requireAdmin, (req, res) => {
+  const { role } = req.body;
+  if (!["super_admin", "admin", "home_member", "guest"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role specified." });
+  }
+
+  // Only super_admin can create another super_admin or admin
+  if ((role === "super_admin" || role === "admin") && req.userRole !== "super_admin") {
+    return res.status(403).json({ error: "Only Super Admins can generate invites for Admins." });
+  }
+
+  const token = crypto.randomBytes(16).toString("hex");
+  const dbData = readDb();
+  
+  dbData.invites[token] = {
+    role,
+    createdBy: req.user.email,
+    createdAt: new Date().toISOString()
+  };
+  
+  writeDb(dbData);
+  logEvent("INVITE_GENERATED", { role, by: req.user.email });
+  
+  res.json({ success: true, token, role });
+});
+
+app.get("/api/users", requireAdmin, (req, res) => {
+  const dbData = readDb();
+  res.json({ success: true, users: dbData.users, invites: dbData.invites });
+});
+
+app.delete("/api/users/:email", requireSuperAdmin, async (req, res) => {
+  const targetEmail = req.params.email;
+  const dbData = readDb();
+  
+  if (targetEmail === req.user.email) {
+    return res.status(400).json({ error: "You cannot delete your own account." });
+  }
+  
+  if (!dbData.users[targetEmail]) {
+    return res.status(404).json({ error: "User not found." });
+  }
+  
+  // Try to delete from Firebase
+  try {
+    const userRecord = await admin.auth().getUserByEmail(targetEmail);
+    await admin.auth().deleteUser(userRecord.uid);
+    const db = admin.firestore();
+    await db.collection("users").doc(userRecord.uid).delete();
+  } catch (err) {
+    console.warn(`Could not delete ${targetEmail} from Firebase (might already be deleted):`, err.message);
+  }
+
+  delete dbData.users[targetEmail];
+  writeDb(dbData);
+  logEvent("USER_DELETED", { targetEmail, by: req.user.email });
+  
+  res.json({ success: true });
+});
+
+app.put("/api/users/:email/role", requireSuperAdmin, (req, res) => {
+  const targetEmail = req.params.email;
+  const { role } = req.body;
+  
+  if (!["super_admin", "admin", "home_member", "guest"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role." });
+  }
+  
+  const dbData = readDb();
+  if (!dbData.users[targetEmail]) {
+    return res.status(404).json({ error: "User not found." });
+  }
+  
+  dbData.users[targetEmail].role = role;
+  writeDb(dbData);
+  logEvent("USER_ROLE_CHANGED", { targetEmail, newRole: role, by: req.user.email });
+  
+  res.json({ success: true, user: dbData.users[targetEmail] });
+});
+
+app.delete("/api/invites/:token", requireAdmin, (req, res) => {
+  const { token } = req.params;
+  const dbData = readDb();
+  
+  if (!dbData.invites[token]) {
+    return res.status(404).json({ error: "Invite not found." });
+  }
+  
+  delete dbData.invites[token];
+  writeDb(dbData);
+  res.json({ success: true });
 });
 
 // PUT /auth/me — Update the current user's profile
