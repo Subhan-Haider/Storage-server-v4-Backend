@@ -4714,18 +4714,27 @@ app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   // Use body directly (already parsed by express body parsers)
   const payload = req.body;
   if (!payload || Object.keys(payload).length === 0) {
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.status(400).json({ error: "Empty form submission" });
+    }
     return res.status(400).send("Empty form submission");
   }
 
   const result = formsEngine.recordSubmission(projectId, payload, ip);
   
   if (result.success) {
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({ success: true, redirectUrl: result.redirectUrl });
+    }
     if (result.redirectUrl) {
       return res.redirect(result.redirectUrl);
     } else {
       return res.status(200).send("Form submitted successfully!");
     }
   } else {
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.status(500).json({ error: "Failed to submit form" });
+    }
     return res.status(500).send("Failed to submit form");
   }
 });
