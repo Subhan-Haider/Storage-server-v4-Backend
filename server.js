@@ -543,7 +543,7 @@ async function getAllFilesAsync(dirPath, db, arrayOfFiles = []) {
     const files = await fsPromises.readdir(dirPath);
 
     for (const file of files) {
-      if (file === "db.json" || file === "_thumbnails" || file === "_trash" || file === "node_modules" || file === ".next" || file === ".git" || file === "deployments" || file === "_backups" || file.startsWith("watchdog_") || file.endsWith(".tmp")) continue;
+      if (file === "db.json" || file === "_vault" || file === "_thumbnails" || file === "_trash" || file === "node_modules" || file === ".next" || file === ".git" || file === "deployments" || file === "_backups" || file.startsWith("watchdog_") || file.endsWith(".tmp")) continue;
 
       const fullPath = path.join(dirPath, file);
       
