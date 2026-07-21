@@ -4137,13 +4137,11 @@ app.get("/auth/me", requireUserAuth, async (req, res) => {
   try {
     const db = admin.firestore();
     const doc = await db.collection("users").doc(req.user.uid).get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: "User profile not found." });
-    }
+    
+    let profileData = doc.exists ? doc.data() : { email: req.user.email, name: req.user.name || "" };
     
     const dbData = readDb();
     const userRecord = dbData.users[req.user.email];
-    const profileData = doc.data();
     
     // Inject true RBAC role and permissions from db.json into the profile response
     if (userRecord) {
@@ -4159,6 +4157,9 @@ app.get("/auth/me", requireUserAuth, async (req, res) => {
         ...(defaultPermissions[userRecord.role] || defaultPermissions.guest),
         ...(userRecord.permissions || {})
       };
+    } else {
+      profileData.role = "user";
+      profileData.permissions = { canUpload: false, canDelete: false, canShare: false, canDownload: true };
     }
 
     res.json({ success: true, profile: profileData });
