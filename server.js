@@ -212,7 +212,7 @@ const DB_PATH = path.join(UPLOAD_PATH, "db.json");
 
 function readDb() {
   const defaultDb = {
-    files: {}, logs: [], shares: {}, users: {}, invites: {}, folders: {}, trash: {}, webhookUrl: "", mfaCodes: {}, analytics: { totalUploads: 0, totalDownloads: 0, dailyStats: {} }, settings: { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], notificationsEnabled: true, customBaseUrl: "" }
+    files: {}, logs: [], shares: {}, users: {}, invites: {}, folders: {}, trash: {}, vaults: {}, webhookUrl: "", mfaCodes: {}, analytics: { totalUploads: 0, totalDownloads: 0, dailyStats: {} }, settings: { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], notificationsEnabled: true, customBaseUrl: "" }
   };
   if (!fs.existsSync(DB_PATH)) {
     return defaultDb;
@@ -226,6 +226,7 @@ function readDb() {
     if (!data.invites) data.invites = {};
     if (!data.folders) data.folders = {};
     if (!data.trash) data.trash = {};
+    if (!data.vaults) data.vaults = {};
     if (!data.webhookUrl) data.webhookUrl = "";
     if (!data.mfaCodes) data.mfaCodes = {};
     if (!data.analytics) data.analytics = { totalUploads: 0, totalDownloads: 0, dailyStats: {} };
@@ -5162,6 +5163,170 @@ app.post("/api/server/update", requireAuth, (req, res) => {
       });
     });
   }, 500);
+});
+
+// =====================
+// SECURE VAULT
+// =====================
+const vaultTokens = {};
+
+app.get("/api/vault/status", requireAuth, (req, res) => {
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  const isSetup = !!(db.vaults && db.vaults[email] && db.vaults[email].pinHash);
+  res.json({ enabled: isSetup });
+});
+
+app.post("/api/vault/setup", requireAuth, (req, res) => {
+  const { pin } = req.body;
+  if (!pin) return res.status(400).json({ error: "PIN is required" });
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  const pinHash = crypto.createHash("sha256").update(pin).digest("hex");
+  if (!db.vaults) db.vaults = {};
+  db.vaults[email] = { pinHash, createdAt: new Date().toISOString() };
+  writeDb(db);
+  res.json({ success: true });
+});
+
+app.post("/api/vault/verify", requireAuth, (req, res) => {
+  const { pin } = req.body;
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  const vault = db.vaults?.[email];
+  if (!vault) return res.status(400).json({ error: "Vault not set up" });
+  
+  const pinHash = crypto.createHash("sha256").update(pin).digest("hex");
+  if (vault.pinHash !== pinHash) return res.status(401).json({ error: "Incorrect PIN" });
+  
+  const token = crypto.randomBytes(32).toString("hex");
+  vaultTokens[token] = { email, expires: Date.now() + 30 * 60 * 1000 };
+  res.json({ token });
+});
+
+app.post("/api/vault/disable", requireAuth, (req, res) => {
+  const { pin } = req.body;
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  const vault = db.vaults?.[email];
+  if (!vault) return res.status(400).json({ error: "Vault not set up" });
+  
+  const pinHash = crypto.createHash("sha256").update(pin).digest("hex");
+  if (vault.pinHash !== pinHash) return res.status(401).json({ error: "Incorrect PIN" });
+  
+  delete db.vaults[email];
+  writeDb(db);
+  res.json({ success: true });
+});
+
+app.post("/api/vault/move-in", requireAuth, (req, res) => {
+  const { folder, name } = req.body;
+  const email = req.user.email || req.user.uid;
+  const sourcePath = path.join(UPLOAD_PATH, folder, name);
+  const destDir = path.join(UPLOAD_PATH, "_vault", email);
+  const destPath = path.join(destDir, name);
+  
+  if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: "File not found" });
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  
+  fs.renameSync(sourcePath, destPath);
+  
+  const index = fileCache.findIndex(f => f.folder === folder && f.name === name);
+  if (index !== -1) {
+    fileCache.splice(index, 1);
+  }
+  
+  res.json({ success: true });
+});
+
+app.post("/api/vault/move-out", requireAuth, (req, res) => {
+  const { folder, name } = req.body;
+  const email = req.user.email || req.user.uid;
+  const sourcePath = path.join(UPLOAD_PATH, "_vault", email, name);
+  const destDir = path.join(UPLOAD_PATH, folder);
+  const destPath = path.join(destDir, name);
+  
+  if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: "Vault file not found" });
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  
+  fs.renameSync(sourcePath, destPath);
+  
+  const stats = fs.statSync(destPath);
+  let type = "unknown";
+  const ext = path.extname(name).toLowerCase();
+  if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".svg"].includes(ext)) type = "image";
+  else if ([".mp4", ".mov", ".avi", ".mkv", ".webm"].includes(ext)) type = "video";
+  else if ([".pdf"].includes(ext)) type = "pdf";
+  else if ([".html", ".htm"].includes(ext)) type = "html";
+  else if ([".zip", ".rar", ".7z", ".tar", ".gz"].includes(ext)) type = "archive";
+  else if ([".exe", ".apk", ".msi", ".dmg"].includes(ext)) type = "installer";
+  else if ([".txt", ".md", ".json", ".csv", ".xml"].includes(ext)) type = "code";
+
+  fileCache.push({
+    name: name,
+    folder: folder,
+    size: stats.size,
+    type,
+    createdAt: stats.birthtime.toISOString(),
+    url: `/file-serve/${folder}/${name}`,
+    isPublic: false,
+    pinned: false,
+    downloads: 0
+  });
+
+  res.json({ success: true });
+});
+
+app.get("/api/vault/files", requireAuth, (req, res) => {
+  const token = req.headers["x-vault-token"] || req.query.vault_token;
+  const email = req.user.email || req.user.uid;
+  if (!token || !vaultTokens[token] || vaultTokens[token].email !== email || vaultTokens[token].expires < Date.now()) {
+    return res.status(401).json({ error: "Unauthorized vault access" });
+  }
+  
+  const vaultDir = path.join(UPLOAD_PATH, "_vault", email);
+  if (!fs.existsSync(vaultDir)) return res.json([]);
+  
+  const files = fs.readdirSync(vaultDir);
+  const fileData = files.map(file => {
+    const fullPath = path.join(vaultDir, file);
+    const stats = fs.statSync(fullPath);
+    let type = "unknown";
+    const ext = path.extname(file).toLowerCase();
+    if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".svg"].includes(ext)) type = "image";
+    else if ([".mp4", ".mov", ".avi", ".mkv", ".webm"].includes(ext)) type = "video";
+    else if ([".pdf"].includes(ext)) type = "pdf";
+    else if ([".html", ".htm"].includes(ext)) type = "html";
+    else if ([".zip", ".rar", ".7z", ".tar", ".gz"].includes(ext)) type = "archive";
+    else if ([".exe", ".apk", ".msi", ".dmg"].includes(ext)) type = "installer";
+    else if ([".txt", ".md", ".json", ".csv", ".xml"].includes(ext)) type = "code";
+    
+    return {
+      name: file,
+      folder: "_vault",
+      size: stats.size,
+      type,
+      createdAt: stats.birthtime.toISOString(),
+      url: `/api/vault/file-serve/${encodeURIComponent(file)}?vault_token=${token}`,
+      isPublic: false,
+      pinned: false,
+      downloads: 0
+    };
+  });
+  
+  res.json(fileData);
+});
+
+app.get("/api/vault/file-serve/:name", (req, res) => {
+  const token = req.query.vault_token;
+  if (!token || !vaultTokens[token] || vaultTokens[token].expires < Date.now()) {
+    return res.status(401).send("Unauthorized");
+  }
+  const email = vaultTokens[token].email;
+  const name = req.params.name;
+  const fullPath = path.join(UPLOAD_PATH, "_vault", email, name);
+  if (!fs.existsSync(fullPath)) return res.status(404).send("File not found");
+  res.sendFile(fullPath);
 });
 
 // =====================
