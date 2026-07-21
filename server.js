@@ -5189,6 +5189,87 @@ app.post("/api/vault/setup", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/vault/change-pin", requireAuth, (req, res) => {
+  const { currentPin, newPin } = req.body;
+  if (!currentPin || !newPin) return res.status(400).json({ error: "Current PIN and New PIN are required" });
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  
+  if (!db.vaults || !db.vaults[email] || !db.vaults[email].pinHash) {
+    return res.status(400).json({ error: "Vault not configured" });
+  }
+
+  const currentPinHash = crypto.createHash("sha256").update(currentPin).digest("hex");
+  if (db.vaults[email].pinHash !== currentPinHash) {
+    return res.status(403).json({ error: "Incorrect current PIN" });
+  }
+
+  const newPinHash = crypto.createHash("sha256").update(newPin).digest("hex");
+  db.vaults[email].pinHash = newPinHash;
+  writeDb(db);
+  res.json({ success: true });
+});
+
+app.post("/api/vault/forgot-pin", requireAuth, async (req, res) => {
+  try {
+    const db = readDb();
+    const email = req.user.email || req.user.uid;
+    
+    // Generate a 6-digit OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    
+    if (!db.mfaCodes) db.mfaCodes = {};
+    db.mfaCodes[email] = { code, expiresAt };
+    writeDb(db);
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Secure Vault PIN Reset Code",
+      text: `Your Secure Vault PIN reset code is: ${code}\nThis code will expire in 10 minutes.`,
+      html: `<h2>Secure Vault PIN Reset</h2><p>Your PIN reset code is: <strong>${code}</strong></p><p>This code will expire in 10 minutes.</p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true, message: "Verification email sent" });
+  } catch (error) {
+    console.error("Failed to send reset code:", error);
+    res.status(500).json({ error: "Failed to send reset code" });
+  }
+});
+
+app.post("/api/vault/reset-pin", requireAuth, (req, res) => {
+  const { code, newPin } = req.body;
+  if (!code || !newPin) return res.status(400).json({ error: "Code and New PIN are required" });
+  const db = readDb();
+  const email = req.user.email || req.user.uid;
+  
+  if (!db.mfaCodes || !db.mfaCodes[email]) {
+    return res.status(400).json({ error: "Invalid or expired reset code" });
+  }
+  
+  if (db.mfaCodes[email].code !== code) {
+    return res.status(400).json({ error: "Incorrect reset code" });
+  }
+  
+  if (Date.now() > db.mfaCodes[email].expiresAt) {
+    delete db.mfaCodes[email];
+    writeDb(db);
+    return res.status(400).json({ error: "Reset code has expired" });
+  }
+  
+  const newPinHash = crypto.createHash("sha256").update(newPin).digest("hex");
+  if (!db.vaults) db.vaults = {};
+  if (!db.vaults[email]) db.vaults[email] = { createdAt: new Date().toISOString() };
+  
+  db.vaults[email].pinHash = newPinHash;
+  delete db.mfaCodes[email];
+  writeDb(db);
+  
+  res.json({ success: true });
+});
+
 app.post("/api/vault/verify", requireAuth, (req, res) => {
   const { pin } = req.body;
   const db = readDb();
