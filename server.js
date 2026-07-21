@@ -20,6 +20,7 @@ const cron = require("node-cron");
 const envPath = fs.existsSync(path.join(__dirname, ".env.local")) ? path.join(__dirname, ".env.local") : path.join(__dirname, "..", ".env.local");
 require("dotenv").config({ path: envPath });
 const watchdog = require("./watchdog");
+const projectWatchdog = require("./project_watchdog");
 const exiftool = require("node-exiftool");
 const exiftoolBin = require("dist-exiftool");
 const deploymentEngine = require("./deployment_engine");
@@ -4634,6 +4635,18 @@ app.get("/admin/system/stream", requireAuth, (req, res) => {
 // DEPLOYMENTS & ANALYTICS API
 // =====================
 
+app.get("/api/deployments/uptime/:id", requireAuth, (req, res) => {
+  const { id } = req.params;
+  const uptimePath = path.join(UPLOAD_PATH, "deployments", id, "uptime.json");
+  if (!fs.existsSync(uptimePath)) return res.json({ history: [] });
+  try {
+    const data = JSON.parse(fs.readFileSync(uptimePath, 'utf8'));
+    res.json({ history: data });
+  } catch(e) {
+    res.json({ history: [] });
+  }
+});
+
 app.get("/analytics/script.js", (req, res) => {
   const projectId = req.query.projectId || "";
   res.type('.js');
@@ -5591,6 +5604,7 @@ app.get("/api/vault/file-serve/:name", (req, res) => {
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("Storage Admin API running on port", PORT);
   watchdog.startWatchdog();
+  projectWatchdog.startProjectWatchdog();
   if (cloudflareManager && cloudflareManager.autoFixLocalhost) {
     cloudflareManager.autoFixLocalhost();
   }
