@@ -4726,16 +4726,51 @@ app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   const result = formsEngine.recordSubmission(projectId, payload, ip);
   
   if (result.success) {
-    // Send email alert to admin
     const project = deploymentEngine.getProject(projectId);
     const projectName = project ? project.name : projectId;
-    
-    let emailBody = `A new form was submitted on your project <b>${projectName}</b>.<br><br>`;
+
+    // --- 1. Admin notification email ---
+    let adminEmailBody = `A new form submission was received on <b>${projectName}</b>.<br><br>`;
+    adminEmailBody += `<table style="border-collapse:collapse;width:100%">`;
     for (const [key, value] of Object.entries(payload)) {
-      emailBody += `<b>${key}:</b> ${value}<br>`;
+      adminEmailBody += `<tr><td style="padding:6px 12px;font-weight:bold;background:#f8fafc;border:1px solid #e2e8f0;width:30%">${key}</td><td style="padding:6px 12px;border:1px solid #e2e8f0">${value}</td></tr>`;
     }
-    
-    sendSystemAlertEmail("New Form Submission", emailBody, "📝", "form_submit");
+    adminEmailBody += `</table>`;
+    sendSystemAlertEmail("📝 New Form Submission", adminEmailBody, "📝", "form_submit");
+
+    // --- 2. Confirmation email to the person who submitted the form ---
+    const submitterEmail = payload.email || payload.Email || payload.EMAIL || null;
+    const submitterName = payload.name || payload.Name || payload.NAME || 'there';
+    if (transporter && submitterEmail) {
+      const confirmMailOptions = {
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: submitterEmail,
+        subject: `✅ We received your message — ${projectName}`,
+        html: `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:40px 20px;background:#f1f5f9;color:#334155;text-align:center;">
+            <div style="max-width:560px;margin:0 auto;background:#fff;padding:36px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+              <div style="background:#dcfce7;height:64px;width:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px auto;">
+                <span style="font-size:32px;">✅</span>
+              </div>
+              <h2 style="color:#166534;font-size:22px;font-weight:800;margin:0 0 8px 0;">Message Received!</h2>
+              <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px 0;">
+                Hi <strong>${submitterName}</strong>, thank you for reaching out!<br>
+                We've received your message and will get back to you as soon as possible.
+              </p>
+              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:left;margin-bottom:24px;">
+                <p style="margin:0 0 8px 0;font-size:13px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Your submission</p>
+                ${Object.entries(payload).map(([k,v]) => `<p style="margin:4px 0;font-size:14px;"><strong style="color:#0f172a">${k}:</strong> <span style="color:#475569">${v}</span></p>`).join('')}
+              </div>
+              <p style="color:#94a3b8;font-size:13px;margin:0;">This is an automated confirmation from <strong>${projectName}</strong>.</p>
+            </div>
+          </div>
+        `
+      };
+      transporter.sendMail(confirmMailOptions, (err) => {
+        if (err) console.error('[Forms] Failed to send confirmation email:', err.message);
+        else console.log(`[Forms] Confirmation email sent to ${submitterEmail}`);
+      });
+    }
 
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({ success: true, redirectUrl: result.redirectUrl });
