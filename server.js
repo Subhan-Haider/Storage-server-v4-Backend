@@ -4796,6 +4796,14 @@ app.get("/api/deployments/file/:id", requireAuth, (req, res) => {
   if (!targetPath.startsWith(projectDir)) return res.status(403).json({ error: "Access denied" });
   if (!fs.existsSync(targetPath)) return res.status(404).json({ error: "File not found" });
 
+  const ext = path.extname(targetPath).toLowerCase();
+  const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico'].includes(ext);
+
+  if (isImage) {
+    const content = fs.readFileSync(targetPath, "base64");
+    return res.json({ success: true, content, isImage: true });
+  }
+
   const content = fs.readFileSync(targetPath, "utf8");
   res.json({ success: true, content });
 });
