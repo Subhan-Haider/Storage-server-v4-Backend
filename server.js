@@ -74,12 +74,12 @@ if (process.env.SMTP_ENABLED === "true") {
 }
 
 function sendSystemAlertEmail(title, message, emoji = "🚨", eventType = null) {
-  sendDiscordAlert(title, message, emoji).catch(()=> {});
+  sendDiscordAlert(title, message, emoji, eventType).catch(()=> {});
 
   if (!transporter) return;
   const db = readDb();
   const settings = db.settings || {};
-  if (settings.notificationsEnabled === false) return;
+  if (settings.emailNotificationsEnabled === false) return;
   // Per-event check
   if (eventType && settings.notificationPreferences) {
     if (settings.notificationPreferences[eventType] === false) return;
@@ -114,8 +114,15 @@ function sendSystemAlertEmail(title, message, emoji = "🚨", eventType = null) 
   });
 }
 
-async function sendDiscordAlert(title, message, emoji = "🚨") {
+async function sendDiscordAlert(title, message, emoji = "🚨", eventType = null) {
   const db = readDb();
+  
+  if (db.settings?.discordNotificationsEnabled === false) return;
+  
+  if (eventType && db.settings?.notificationPreferences) {
+    if (db.settings.notificationPreferences[eventType] === false) return;
+  }
+
   const webhookUrl = db.settings?.discordWebhookUrl || process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return;
 
@@ -222,10 +229,16 @@ function readDb() {
     if (!data.webhookUrl) data.webhookUrl = "";
     if (!data.mfaCodes) data.mfaCodes = {};
     if (!data.analytics) data.analytics = { totalUploads: 0, totalDownloads: 0, dailyStats: {} };
-    if (!data.settings) data.settings = { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], notificationsEnabled: true, customBaseUrl: "" };
+    if (data.settings?.notificationsEnabled !== undefined) {
+      data.settings.emailNotificationsEnabled = data.settings.notificationsEnabled;
+      delete data.settings.notificationsEnabled;
+    }
+    
+    if (!data.settings) data.settings = { allowedOrigins: [], allowedEmails: ["setupg98@gmail.com", "support@subhan.tech"], notificationEmails: ["support@subhan.tech"], emailNotificationsEnabled: true, discordNotificationsEnabled: true, customBaseUrl: "" };
     if (!data.settings.allowedEmails) data.settings.allowedEmails = ["setupg98@gmail.com", "support@subhan.tech"];
     if (!data.settings.notificationEmails) data.settings.notificationEmails = ["support@subhan.tech"];
-    if (data.settings.notificationsEnabled === undefined) data.settings.notificationsEnabled = true;
+    if (data.settings.emailNotificationsEnabled === undefined) data.settings.emailNotificationsEnabled = true;
+    if (data.settings.discordNotificationsEnabled === undefined) data.settings.discordNotificationsEnabled = true;
     if (data.settings.customBaseUrl === undefined) data.settings.customBaseUrl = "";
     if (!data.settings.notificationPreferences) data.settings.notificationPreferences = {
       onUpload: true,
@@ -3837,13 +3850,23 @@ app.delete("/admin/settings/emails", requireAuth, (req, res) => {
 });
 
 app.post("/admin/settings/notifications/toggle", requireAuth, (req, res) => {
-  const { enabled } = req.body;
+  const { enabled, type } = req.body;
   const db = readDb();
   if (!db.settings) db.settings = {};
-  db.settings.notificationsEnabled = !!enabled;
+  
+  if (type === 'discord') {
+    db.settings.discordNotificationsEnabled = !!enabled;
+  } else {
+    db.settings.emailNotificationsEnabled = !!enabled;
+  }
+  
   writeDb(db);
-  logEvent("NOTIFICATIONS_TOGGLED", { enabled: !!enabled });
-  res.json({ success: true, notificationsEnabled: !!enabled });
+  logEvent("NOTIFICATIONS_TOGGLED", { enabled: !!enabled, type });
+  res.json({ 
+    success: true, 
+    emailNotificationsEnabled: db.settings.emailNotificationsEnabled,
+    discordNotificationsEnabled: db.settings.discordNotificationsEnabled
+  });
 });
 
 app.post("/admin/settings/notifications/emails", requireAuth, (req, res) => {
