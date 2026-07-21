@@ -4636,6 +4636,75 @@ app.get("/api/deployments/projects", requireAuth, (req, res) => {
   res.json(deploymentEngine.readProjects());
 });
 
+app.get("/api/deployments/files/:id", requireAuth, (req, res) => {
+  const project = deploymentEngine.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: "Project not found" });
+
+  const projectDir = path.join(deploymentEngine.APPS_DIR, project.id);
+  if (!fs.existsSync(projectDir)) return res.json({ files: [] });
+
+  const walk = (dir) => {
+    let results = [];
+    const list = fs.readdirSync(dir);
+    list.forEach(file => {
+      if (file === "node_modules" || file === ".git" || file === ".next") return;
+      const fullPath = path.join(dir, file);
+      const stat = fs.statSync(fullPath);
+      const relPath = fullPath.replace(projectDir, '').replace(/\\/g, '/');
+      if (stat && stat.isDirectory()) {
+        results.push({
+          name: file,
+          type: 'directory',
+          path: relPath,
+          children: walk(fullPath)
+        });
+      } else {
+        results.push({
+          name: file,
+          type: 'file',
+          path: relPath
+        });
+      }
+    });
+    return results;
+  };
+  
+  try {
+    const files = walk(projectDir);
+    res.json({ success: true, files });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/deployments/file/:id", requireAuth, (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath) return res.status(400).json({ error: "Path required" });
+
+  const projectDir = path.join(deploymentEngine.APPS_DIR, req.params.id);
+  const targetPath = path.join(projectDir, filePath.replace(/^\//, ''));
+
+  if (!targetPath.startsWith(projectDir)) return res.status(403).json({ error: "Access denied" });
+  if (!fs.existsSync(targetPath)) return res.status(404).json({ error: "File not found" });
+
+  const content = fs.readFileSync(targetPath, "utf8");
+  res.json({ success: true, content });
+});
+
+app.post("/api/deployments/file/:id", requireAuth, (req, res) => {
+  const filePath = req.body.path;
+  const content = req.body.content;
+  if (!filePath || content === undefined) return res.status(400).json({ error: "Path and content required" });
+
+  const projectDir = path.join(deploymentEngine.APPS_DIR, req.params.id);
+  const targetPath = path.join(projectDir, filePath.replace(/^\//, ''));
+
+  if (!targetPath.startsWith(projectDir)) return res.status(403).json({ error: "Access denied" });
+  
+  fs.writeFileSync(targetPath, content, "utf8");
+  res.json({ success: true });
+});
+
 app.get("/api/deployments/tunnel-cname", requireAuth, (req, res) => {
   res.json({ cname: cloudflareManager.getTunnelCname() });
 });
