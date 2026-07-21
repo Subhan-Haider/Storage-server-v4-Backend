@@ -4738,6 +4738,12 @@ app.get("/api/deployments/projects", requireAuth, (req, res) => {
   res.json(deploymentEngine.readProjects());
 });
 
+app.get("/api/deployments/:id", requireAuth, (req, res) => {
+  const project = deploymentEngine.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  res.json({ success: true, project });
+});
+
 app.get("/api/deployments/files/:id", requireAuth, (req, res) => {
   const project = deploymentEngine.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: "Project not found" });
