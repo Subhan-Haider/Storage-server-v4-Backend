@@ -145,51 +145,6 @@ async function sendDiscordAlert(title, message, emoji = "🚨") {
   }
 }
 
-function sendUploadNotificationEmail(filename, folderName, fileSize) {
-  if (!transporter) return;
-  const db = readDb();
-  const settings = db.settings || {};
-  if (settings.notificationsEnabled === false) return; // Globally disabled
-  if (settings.notificationPreferences?.onUpload === false) return; // Per-event disabled
-
-  const emails = settings.notificationEmails || [process.env.ADMIN_EMAIL].filter(Boolean);
-  if (emails.length === 0) return;
-
-  const mailOptions = {
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: emails.join(", "),
-    subject: `🚀 New File Uploaded: ${filename}`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 40px 20px; background-color: #f1f5f9; color: #334155; text-align: center;">
-        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
-          <div style="background-color: #e0e7ff; height: 60px; width: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto;">
-            <span style="font-size: 30px;">🚀</span>
-          </div>
-          <h2 style="color: #4f46e5; font-weight: 800; font-size: 24px; margin-bottom: 10px; margin-top: 0;">New File Uploaded</h2>
-          <p style="color: #64748b; font-size: 16px; margin-bottom: 30px; line-height: 1.5;">A new file has successfully been uploaded to your storage server.</p>
-          
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: left; margin-bottom: 30px;">
-            <p style="margin: 0 0 10px 0;"><strong style="color: #0f172a; width: 100px; display: inline-block;">File Name:</strong> <span style="color: #475569;">${filename}</span></p>
-            <p style="margin: 0 0 10px 0;"><strong style="color: #0f172a; width: 100px; display: inline-block;">Folder:</strong> <span style="color: #475569; background-color: #e2e8f0; padding: 2px 8px; border-radius: 4px; font-size: 14px;">${folderName}</span></p>
-            <p style="margin: 0 0 10px 0;"><strong style="color: #0f172a; width: 100px; display: inline-block;">Size:</strong> <span style="color: #475569;">${(fileSize / 1024 / 1024).toFixed(2)} MB</span></p>
-            <p style="margin: 0;"><strong style="color: #0f172a; width: 100px; display: inline-block;">Time:</strong> <span style="color: #475569;">${new Date().toLocaleString()}</span></p>
-          </div>
-          
-          <a href="https://storage.lootops.me/files" style="display: inline-block; background-color: #4f46e5; color: #ffffff; font-weight: 600; font-size: 16px; text-decoration: none; padding: 14px 28px; border-radius: 8px; transition: background-color 0.2s;">View in Dashboard</a>
-        </div>
-      </div>
-    `
-  };
-
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      console.error("❌ Error sending email notification:", error);
-    } else {
-      console.log("📧 Email notification sent:", info.response);
-    }
-  });
-}
-
 // =====================
 // SYSTEM PRE-FLIGHT CHECKS (ffmpeg & sharp)
 // =====================
@@ -472,7 +427,7 @@ const requirePermission = (action) => {
 // =====================
 app.post("/api/alerts/login", requireAuth, (req, res) => {
   const email = req.user?.email || "Unknown Admin";
-  sendSystemAlertEmail("Admin Login", `Admin <strong>${email}</strong> has successfully logged into the dashboard.`, "🔐");
+  sendSystemAlertEmail("Admin Login", `Admin <strong>${email}</strong> has successfully logged into the dashboard.`, "🔐", "onLogin");
   res.json({ success: true });
 });
 
@@ -1020,6 +975,7 @@ app.get(/^\/file-download\/(.*)/, async (req, res) => {
   };
   writeDb(db);
   logEvent("FILE_DOWNLOADED", { folder, name });
+  sendSystemAlertEmail("File Downloaded", `File <strong>${name}</strong> was downloaded from <strong>${folder || "root"}</strong>.`, "⬇️", "onDownload");
 
   res.download(filePath, name);
 });
@@ -1537,13 +1493,17 @@ app.post("/upload", apiLimiter, requireUploadAuth, requirePermission("canUpload"
       expiresAt: null,
       exif: exifData,
       faceIds: []
-    };
     writeDb(db);
 
     logEvent("FILE_UPLOAD", { folder: folderName, name: finalFilename, size: fileSize, sha256: fileHash });
 
-    // Send email notification
-    sendUploadNotificationEmail(finalFilename, folderName, fileSize);
+    // Send System Alert
+    sendSystemAlertEmail(
+      "File Uploaded",
+      `A new file <strong>${finalFilename}</strong> (${(fileSize / 1024 / 1024).toFixed(2)} MB) was uploaded to the <strong>${folderName}</strong> folder.`,
+      "🚀",
+      "onUpload"
+    );
 
     // AI Auto-Tagging (Background OCR)
     if (isImage) {
@@ -2152,6 +2112,7 @@ app.post("/admin/create-share", requireAuth, requirePermission("canShare"), (req
   writeDb(db);
 
   logEvent("SHARE_LINK_CREATE", { folder, name, shareId });
+  sendSystemAlertEmail("Share Link Created", `A share link was created for <strong>${name}</strong>.`, "🔗", "onShare");
   res.json({ success: true, shareUrl: `${BASE_URL}/share/${shareId}` });
 });
 
