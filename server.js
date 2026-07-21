@@ -5325,6 +5325,34 @@ app.post("/api/vault/move-in", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/vault/bulk-move-in", requireAuth, (req, res) => {
+  const { files } = req.body;
+  if (!Array.isArray(files) || files.length === 0)
+    return res.status(400).json({ error: "Files array required" });
+
+  const email = req.user.email || req.user.uid;
+  const destDir = path.join(UPLOAD_PATH, "_vault", email);
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+  let moved = 0;
+  files.forEach(({ folder, name }) => {
+    const sourcePath = path.join(UPLOAD_PATH, folder, name);
+    const destPath = path.join(destDir, name);
+    
+    if (fs.existsSync(sourcePath)) {
+      fs.renameSync(sourcePath, destPath);
+      
+      const index = fileCache.findIndex(f => f.folder === folder && f.name === name);
+      if (index !== -1) {
+        fileCache.splice(index, 1);
+      }
+      moved++;
+    }
+  });
+
+  res.json({ success: true, moved });
+});
+
 app.post("/api/vault/move-out", requireAuth, (req, res) => {
   const { folder, name } = req.body;
   const email = req.user.email || req.user.uid;
