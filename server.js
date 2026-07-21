@@ -27,6 +27,7 @@ const deploymentEngine = require("./deployment_engine");
 const analyticsEngine = require("./analytics_engine");
 const githubIntegrations = require("./github_integrations");
 const cloudflareManager = require("./cloudflare_manager");
+const formsEngine = require("./forms_engine");
 
 const app = express();
 app.use(cookieParser());
@@ -4698,6 +4699,41 @@ app.get("/api/deployments/analytics/:id", requireAuth, (req, res) => {
   res.json({ success: true, stats });
 });
 
+// =====================
+// FORMS API
+// =====================
+
+// Public endpoint for submitting forms
+app.post("/api/forms/submit/:projectId", (req, res) => {
+  const { projectId } = req.params;
+  
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  
+  // Use body directly (already parsed by express body parsers)
+  const payload = req.body;
+  if (!payload || Object.keys(payload).length === 0) {
+    return res.status(400).send("Empty form submission");
+  }
+
+  const result = formsEngine.recordSubmission(projectId, payload, ip);
+  
+  if (result.success) {
+    if (result.redirectUrl) {
+      return res.redirect(result.redirectUrl);
+    } else {
+      return res.status(200).send("Form submitted successfully!");
+    }
+  } else {
+    return res.status(500).send("Failed to submit form");
+  }
+});
+
+// Authenticated endpoint to read forms
+app.get("/api/deployments/forms/:id", requireAuth, (req, res) => {
+  const forms = formsEngine.readForms(req.params.id);
+  res.json({ success: true, forms });
+});
+
 app.get("/api/deployments/projects", requireAuth, (req, res) => {
   res.json(deploymentEngine.readProjects());
 });
@@ -5037,24 +5073,79 @@ app.post("/api/deployments/webhook", (req, res) => {
   const payload = req.body;
   if (payload && payload.repository) {
     const branch = payload.ref ? payload.ref.replace("refs/heads/", "") : "main";
-    const matchingProject = projects.find(p =>
-      p.repository.includes(payload.repository.name) && p.branch === branch && p.autoDeploy !== false
+    
+    // Check for branch deletion
+    if (payload.deleted === true) {
+      const db = readDb();
+      const previewProject = Object.values(db.deployments).find(p => 
+        p.repository.includes(payload.repository.name) && 
+        p.branch === branch && 
+        p.isPreview === true
+      );
+      if (previewProject) {
+        deploymentEngine.stopProject(previewProject.id);
+        delete db.deployments[previewProject.id];
+        writeDb(db);
+        return res.json({ success: true, message: `Preview deployment for deleted branch ${branch} has been removed` });
+      }
+      return res.json({ success: true, message: `Branch deleted, no preview found to remove.` });
+    }
+
+    const matchingMainProject = projects.find(p =>
+      p.repository.includes(payload.repository.name) && !p.isPreview && p.autoDeploy !== false
     );
 
-    if (matchingProject) {
-      const commit = payload.head_commit?.message || null;
-      recordHistory(matchingProject, "github-push", commit);
-      deploymentEngine.deployProject(matchingProject.id).then(() => {
-        updateHistoryStatus(matchingProject.id, "success");
-        if (matchingProject.discordNotify !== false)
-          sendSystemAlertEmail(`Deploy Succeeded: ${matchingProject.name}`, `Your GitHub push automatically built and deployed your project.`, "✅");
-      }).catch(e => {
-        updateHistoryStatus(matchingProject.id, "failed");
-        if (matchingProject.discordNotify !== false)
-          sendSystemAlertEmail(`Deploy Failed: ${matchingProject.name}`, `Your GitHub push deployment failed with error:<br><br><code>${e.message}</code>`, "❌");
-        console.error(e);
-      });
-      return res.json({ success: true, message: `Webhook triggered deployment for ${matchingProject.name}` });
+    if (matchingMainProject) {
+      if (matchingMainProject.branch === branch) {
+        // Normal Main Deploy
+        const commit = payload.head_commit?.message || null;
+        recordHistory(matchingMainProject, "github-push", commit);
+        deploymentEngine.deployProject(matchingMainProject.id).then(() => {
+          updateHistoryStatus(matchingMainProject.id, "success");
+          if (matchingMainProject.discordNotify !== false)
+            sendSystemAlertEmail(`Deploy Succeeded: ${matchingMainProject.name}`, `Your GitHub push automatically built and deployed your project.`, "✅");
+        }).catch(e => {
+          updateHistoryStatus(matchingMainProject.id, "failed");
+          if (matchingMainProject.discordNotify !== false)
+            sendSystemAlertEmail(`Deploy Failed: ${matchingMainProject.name}`, `Your GitHub push deployment failed with error:<br><br><code>${e.message}</code>`, "❌");
+          console.error(e);
+        });
+        return res.json({ success: true, message: `Webhook triggered deployment for ${matchingMainProject.name}` });
+      } else if (matchingMainProject.previewDeploymentsEnabled === true) {
+        // Preview Deploy
+        const db = readDb();
+        let previewProject = Object.values(db.deployments).find(p => 
+          p.parentProjectId === matchingMainProject.id && p.branch === branch
+        );
+
+        if (!previewProject) {
+          const newId = crypto.randomUUID();
+          previewProject = {
+            ...matchingMainProject,
+            id: newId,
+            name: `${matchingMainProject.name} (Preview: ${branch})`,
+            branch: branch,
+            parentProjectId: matchingMainProject.id,
+            isPreview: true,
+            status: "idle",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            port: null
+          };
+          db.deployments[newId] = previewProject;
+          writeDb(db);
+        }
+
+        const commit = payload.head_commit?.message || null;
+        recordHistory(previewProject, "github-push-preview", commit);
+        deploymentEngine.deployProject(previewProject.id).then(() => {
+          updateHistoryStatus(previewProject.id, "success");
+        }).catch(e => {
+          updateHistoryStatus(previewProject.id, "failed");
+          console.error(e);
+        });
+        return res.json({ success: true, message: `Webhook triggered Preview Deployment for branch ${branch}` });
+      }
     }
   }
   res.json({ success: false, message: "No matching project found for webhook" });
