@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const http = require('http');
 
 const isWindows = os.platform() === 'win32';
 const UPLOAD_PATH = process.env.UPLOAD_PATH || "/var/www/storage/uploads";
@@ -120,6 +121,27 @@ function recordPageView(projectId, data, ip) {
   if (isUnique) historyEntry.unique += 1;
 
   saveStats(projectId, stats);
+
+  // Fetch location async for unique visitors to avoid rate limits
+  if (isUnique && ip && ip !== '127.0.0.1' && ip !== '::1' && !ip.startsWith('192.168.') && !ip.startsWith('10.')) {
+    http.get(`http://ip-api.com/json/${ip}`, (resp) => {
+      let d = '';
+      resp.on('data', (chunk) => { d += chunk; });
+      resp.on('end', () => {
+        try {
+          const result = JSON.parse(d);
+          if (result.status === 'success' && result.country) {
+            const currentStats = readStats(projectId);
+            if (currentStats) {
+              currentStats.countries = currentStats.countries || {};
+              currentStats.countries[result.country] = (currentStats.countries[result.country] || 0) + 1;
+              saveStats(projectId, currentStats);
+            }
+          }
+        } catch(e) {}
+      });
+    }).on('error', () => {});
+  }
 }
 
 module.exports = {
