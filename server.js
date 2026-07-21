@@ -4705,7 +4705,8 @@ app.get("/api/deployments/analytics/:id", requireAuth, (req, res) => {
 // =====================
 
 // Public endpoint for submitting forms
-app.post("/api/forms/submit/:projectId", (req, res) => {
+const formsUpload = multer();
+app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   const { projectId } = req.params;
   
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
