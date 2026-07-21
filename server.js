@@ -73,7 +73,7 @@ if (process.env.SMTP_ENABLED === "true") {
   });
 }
 
-function sendSystemAlertEmail(title, message, emoji = "🔔", eventType = null) {
+function sendSystemAlertEmail(title, message, emoji = "🚨", eventType = null) {
   sendDiscordAlert(title, message, emoji).catch(()=> {});
 
   if (!transporter) return;
@@ -114,7 +114,7 @@ function sendSystemAlertEmail(title, message, emoji = "🔔", eventType = null) 
   });
 }
 
-async function sendDiscordAlert(title, message, emoji = "🔔") {
+async function sendDiscordAlert(title, message, emoji = "🚨") {
   const db = readDb();
   const webhookUrl = db.settings?.discordWebhookUrl || process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return;
