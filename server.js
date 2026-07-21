@@ -4759,6 +4759,17 @@ app.get("/api/deployments/forms/:id", requireAuth, (req, res) => {
   res.json({ success: true, forms });
 });
 
+// Authenticated endpoint to delete a single form submission
+app.delete("/api/deployments/forms/:projectId/:submissionId", requireAuth, (req, res) => {
+  const { projectId, submissionId } = req.params;
+  const result = formsEngine.deleteSubmission(projectId, submissionId);
+  if (result.success) {
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: result.error });
+  }
+});
+
 app.get("/api/deployments/projects", requireAuth, (req, res) => {
   res.json(deploymentEngine.readProjects());
 });
