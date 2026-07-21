@@ -4723,6 +4723,17 @@ app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   const result = formsEngine.recordSubmission(projectId, payload, ip);
   
   if (result.success) {
+    // Send email alert to admin
+    const project = deploymentEngine.getProject(projectId);
+    const projectName = project ? project.name : projectId;
+    
+    let emailBody = `A new form was submitted on your project <b>${projectName}</b>.<br><br>`;
+    for (const [key, value] of Object.entries(payload)) {
+      emailBody += `<b>${key}:</b> ${value}<br>`;
+    }
+    
+    sendSystemAlertEmail("New Form Submission", emailBody, "📝", "form_submit");
+
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({ success: true, redirectUrl: result.redirectUrl });
     }
