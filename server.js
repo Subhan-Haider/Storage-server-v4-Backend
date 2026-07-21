@@ -28,6 +28,7 @@ const analyticsEngine = require("./analytics_engine");
 const githubIntegrations = require("./github_integrations");
 const cloudflareManager = require("./cloudflare_manager");
 const formsEngine = require("./forms_engine");
+const createLfsRouter = require("./lfs_server");
 
 const app = express();
 app.use(cookieParser());
@@ -5757,7 +5758,13 @@ app.get("/api/vault/file-serve/:name", (req, res) => {
 });
 
 // =====================
-// START
+// LFS API MOUNT
+// =====================
+const lfsRouter = createLfsRouter(UPLOAD_PATH, API_KEY, BASE_URL);
+app.use('/lfs', lfsRouter);
+
+// =====================
+// START SERVER
 // =====================
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("Storage Admin API running on port", PORT);
