@@ -4713,6 +4713,9 @@ app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   
   // Use body directly (already parsed by express body parsers)
   const payload = req.body;
+  console.log("Form submit received:");
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
   if (!payload || Object.keys(payload).length === 0) {
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.status(400).json({ error: "Empty form submission" });
