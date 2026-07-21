@@ -5062,7 +5062,7 @@ app.post("/api/deployments/fix/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    const liveDir = path.join(deploymentEngine.WEBSITES_DIR, id);
+    const liveDir = path.join(deploymentEngine.APPS_DIR, id);
     const fixResult = await fixWithAI(id, logs || "", liveDir, aiSettings);
     
     // Automatically trigger a redeploy after applying the fix
