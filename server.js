@@ -5391,6 +5391,22 @@ app.post("/api/vault/move-out", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/vault/delete", requireAuth, (req, res) => {
+  const { name } = req.body;
+  const email = req.user.email || req.user.uid;
+  const filePath = path.join(UPLOAD_PATH, "_vault", email, name);
+  
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Vault file not found" });
+  
+  fs.unlinkSync(filePath);
+  
+  // also delete thumbnail if exists
+  const thumbPath = path.join(THUMBNAIL_PATH, `${name}-thumb.webp`);
+  if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+  
+  res.json({ success: true });
+});
+
 app.get("/api/vault/files", requireAuth, (req, res) => {
   const token = req.headers["x-vault-token"] || req.query.vault_token;
   const email = req.user.email || req.user.uid;
