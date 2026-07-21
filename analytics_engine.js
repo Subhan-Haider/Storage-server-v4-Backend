@@ -110,6 +110,34 @@ function recordPageView(projectId, data, ip) {
   else if (ua.includes('ipad') || ua.includes('tablet')) device = 'Tablet';
   stats.devices[device] = (stats.devices[device] || 0) + 1;
 
+  // OS
+  let osType = 'Unknown';
+  if (ua.includes('win')) osType = 'Windows';
+  else if (ua.includes('mac')) osType = 'macOS';
+  else if (ua.includes('linux')) osType = 'Linux';
+  else if (ua.includes('android')) osType = 'Android';
+  else if (ua.includes('iphone') || ua.includes('ipad')) osType = 'iOS';
+  stats.os = stats.os || {};
+  stats.os[osType] = (stats.os[osType] || 0) + 1;
+
+  // Screen Resolution
+  if (data.sw && data.sh) {
+    const res = `${data.sw}x${data.sh}`;
+    stats.resolutions = stats.resolutions || {};
+    stats.resolutions[res] = (stats.resolutions[res] || 0) + 1;
+  }
+
+  // Average Load Speed (Rolling average)
+  if (data.load && data.load > 0 && data.load < 60000) { // Ignore > 60s
+    stats.avgLoadTime = stats.avgLoadTime || 0;
+    stats.totalLoads = stats.totalLoads || 0;
+    
+    // Calculate new average: ((oldAvg * totalLoads) + newLoad) / (totalLoads + 1)
+    const currentTotal = stats.avgLoadTime * stats.totalLoads;
+    stats.totalLoads += 1;
+    stats.avgLoadTime = Math.round((currentTotal + data.load) / stats.totalLoads);
+  }
+
   // History
   let historyEntry = stats.history.find(h => h.date === today);
   if (!historyEntry) {

@@ -4640,18 +4640,33 @@ app.get("/analytics/script.js", (req, res) => {
   res.send(`
     (function() {
       if (typeof window === 'undefined') return;
-      var data = {
-        url: window.location.href,
-        ref: document.referrer || 'Direct',
-        ua: navigator.userAgent
+      var track = function() {
+        var perf = window.performance && window.performance.getEntriesByType ? window.performance.getEntriesByType('navigation')[0] : null;
+        var loadTime = perf ? Math.round(perf.loadEventEnd || perf.domComplete || perf.responseEnd || 0) : 0;
+        var data = {
+          url: window.location.href,
+          ref: document.referrer || 'Direct',
+          ua: navigator.userAgent,
+          sw: window.screen ? window.screen.width : window.innerWidth,
+          sh: window.screen ? window.screen.height : window.innerHeight,
+          load: loadTime
+        };
+        var endpoint = '${process.env.NEXT_PUBLIC_API_URL || process.env.STORAGE_SERVER_URL || 'http://localhost:5000'}/api/analytics/track?projectId=' + '${projectId}';
+        fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          keepalive: true
+        }).catch(function(){});
       };
-      var endpoint = '${process.env.NEXT_PUBLIC_API_URL || process.env.STORAGE_SERVER_URL || 'http://localhost:5000'}/api/analytics/track?projectId=' + '${projectId}';
-      fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        keepalive: true
-      }).catch(function(){});
+
+      if (document.readyState === 'complete') {
+        track();
+      } else {
+        window.addEventListener('load', function() {
+          setTimeout(track, 100);
+        });
+      }
     })();
   `);
 });
