@@ -543,7 +543,7 @@ async function getAllFilesAsync(dirPath, db, arrayOfFiles = []) {
     const files = await fsPromises.readdir(dirPath);
 
     for (const file of files) {
-      if (file === "db.json" || file === "_thumbnails" || file === "_trash" || file === "node_modules" || file === ".next" || file === ".git" || file === "deployments" || file === "_backups" || file.startsWith("watchdog_")) continue;
+      if (file === "db.json" || file === "_thumbnails" || file === "_trash" || file === "node_modules" || file === ".next" || file === ".git" || file === "deployments" || file === "_backups" || file.startsWith("watchdog_") || file.endsWith(".tmp")) continue;
 
       const fullPath = path.join(dirPath, file);
       
@@ -5401,7 +5401,7 @@ app.get("/api/vault/files", requireAuth, (req, res) => {
   const vaultDir = path.join(UPLOAD_PATH, "_vault", email);
   if (!fs.existsSync(vaultDir)) return res.json([]);
   
-  const files = fs.readdirSync(vaultDir);
+  const files = fs.readdirSync(vaultDir).filter(f => !f.endsWith(".tmp"));
   const fileData = files.map(file => {
     const fullPath = path.join(vaultDir, file);
     const stats = fs.statSync(fullPath);
