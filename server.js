@@ -4645,7 +4645,7 @@ app.get("/analytics/script.js", (req, res) => {
         ref: document.referrer || 'Direct',
         ua: navigator.userAgent
       };
-      var endpoint = '${process.env.STORAGE_SERVER_URL || ''}/api/analytics/track?projectId=' + '${projectId}';
+      var endpoint = '${process.env.NEXT_PUBLIC_API_URL || process.env.STORAGE_SERVER_URL || 'http://localhost:5000'}/api/analytics/track?projectId=' + '${projectId}';
       fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -429,7 +429,7 @@ async function deployProject(projectId) {
         path.join(workingDir, "build", "index.html")
       ];
       
-      const storageUrl = process.env.STORAGE_SERVER_URL || '';
+      const storageUrl = process.env.NEXT_PUBLIC_API_URL || process.env.STORAGE_SERVER_URL || 'http://localhost:5000';
       const scriptTag = `\n    <script src="${storageUrl}/analytics/script.js?projectId=${projectId}" defer></script>\n`;
       
       let injected = false;
