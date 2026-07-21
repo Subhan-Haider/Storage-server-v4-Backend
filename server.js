@@ -5415,6 +5415,9 @@ app.get("/api/vault/files", requireAuth, (req, res) => {
     else if ([".exe", ".apk", ".msi", ".dmg"].includes(ext)) type = "installer";
     else if ([".txt", ".md", ".json", ".csv", ".xml"].includes(ext)) type = "code";
     
+    const thumbFilename = `${file}-thumb.webp`;
+    const hasThumb = fs.existsSync(path.join(THUMBNAIL_PATH, thumbFilename));
+
     return {
       name: file,
       folder: "_vault",
@@ -5422,6 +5425,7 @@ app.get("/api/vault/files", requireAuth, (req, res) => {
       type,
       createdAt: stats.birthtime.toISOString(),
       url: `/api/vault/file-serve/${encodeURIComponent(file)}?vault_token=${token}`,
+      thumbnailUrl: hasThumb ? `/thumbnails/${encodeURIComponent(thumbFilename)}` : null,
       isPublic: false,
       pinned: false,
       downloads: 0
