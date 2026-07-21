@@ -433,6 +433,40 @@ const requireAdmin = (req, res, next) => {
   });
 };
 
+const requirePermission = (action) => {
+  return (req, res, next) => {
+    // API Keys bypass granular permissions
+    if (req.user && req.user.uid === "api-key-access") {
+      return next();
+    }
+
+    const dbData = readDb();
+    const userRecord = req.user ? dbData.users[req.user.email] : null;
+    
+    // If no user record found, they shouldn't even be here, but fail safe
+    if (!userRecord) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+    
+    const defaultPermissions = {
+      super_admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+      admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+      home_member: { canUpload: true, canDelete: false, canShare: false, canDownload: true },
+      guest: { canUpload: false, canDelete: false, canShare: false, canDownload: true }
+    };
+
+    const userPerms = {
+      ...(defaultPermissions[req.userRole || userRecord.role] || defaultPermissions.guest),
+      ...(userRecord.permissions || {})
+    };
+
+    if (!userPerms[action]) {
+      return res.status(403).json({ error: `Permission denied: Requires ${action}` });
+    }
+    next();
+  };
+};
+
 // =====================
 // ALERTS (Login / Visit)
 // =====================
@@ -1400,7 +1434,7 @@ const requireUploadAuth = async (req, res, next) => {
   return requireAuth(req, res, next);
 };
 
-app.post("/upload", apiLimiter, requireUploadAuth, (req, res) => {
+app.post("/upload", apiLimiter, requireUploadAuth, requirePermission("canUpload"), (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: "No file provided" });
@@ -1822,7 +1856,7 @@ app.post("/admin/search/scan-tags", requireAuth, async (req, res) => {
 });
 
 // 4. DELETE / SOFT-DELETE FILE
-app.delete("/admin/file", requireAuth, (req, res) => {
+app.delete("/admin/file", requireAuth, requirePermission("canDelete"), (req, res) => {
   const { folder, name, force } = req.body;
   if (!name) return res.status(400).json({ error: "File name required" });
 
@@ -2101,7 +2135,7 @@ app.post("/admin/set-expiry", requireAuth, (req, res) => {
 
 
 // 9. CREATE EXPIRING SHARE
-app.post("/admin/create-share", requireAuth, (req, res) => {
+app.post("/admin/create-share", requireAuth, requirePermission("canShare"), (req, res) => {
   const { folder, name, durationMs, password } = req.body;
   if (!name) return res.status(400).json({ error: "File name required" });
 
@@ -3959,11 +3993,19 @@ app.post("/auth/register", async (req, res) => {
       metadata: metadata || {},
     });
 
-    // Store role in local db.json
+    // Store role and default permissions in local db.json
+    const defaultPermissions = {
+      super_admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+      admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+      home_member: { canUpload: true, canDelete: false, canShare: false, canDownload: true },
+      guest: { canUpload: false, canDelete: false, canShare: false, canDownload: true }
+    };
+
     const updatedDb = readDb();
     updatedDb.users[email] = {
       email: email,
       role: assignedRole,
+      permissions: defaultPermissions[assignedRole] || defaultPermissions.guest,
       createdAt: new Date().toISOString()
     };
     if (inviteToken && updatedDb.invites[inviteToken]) {
@@ -4117,9 +4159,20 @@ app.get("/auth/me", requireUserAuth, async (req, res) => {
     const userRecord = dbData.users[req.user.email];
     const profileData = doc.data();
     
-    // Inject true RBAC role from db.json into the profile response
+    // Inject true RBAC role and permissions from db.json into the profile response
     if (userRecord) {
       profileData.role = userRecord.role;
+      const defaultPermissions = {
+        super_admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+        admin: { canUpload: true, canDelete: true, canShare: true, canDownload: true },
+        home_member: { canUpload: true, canDelete: false, canShare: false, canDownload: true },
+        guest: { canUpload: false, canDelete: false, canShare: false, canDownload: true }
+      };
+      // Merge default permissions with user-specific overrides
+      profileData.permissions = {
+        ...(defaultPermissions[userRecord.role] || defaultPermissions.guest),
+        ...(userRecord.permissions || {})
+      };
     }
 
     res.json({ success: true, profile: profileData });
@@ -4218,6 +4271,31 @@ app.put("/api/users/:email/role", requireSuperAdmin, (req, res) => {
   logEvent("USER_ROLE_CHANGED", { targetEmail, newRole: role, by: req.user.email });
   
   res.json({ success: true, user: dbData.users[targetEmail] });
+});
+
+app.put("/api/users/:email/permissions", requireSuperAdmin, (req, res) => {
+  const targetEmail = req.params.email;
+  const { permissions } = req.body;
+  
+  if (targetEmail === "setupg98@gmail.com") {
+    return res.status(403).json({ error: "Cannot modify the primary owner's permissions." });
+  }
+  
+  const dbData = readDb();
+  if (!dbData.users[targetEmail]) {
+    return res.status(404).json({ error: "User not found." });
+  }
+  
+  // Merge the existing permissions (if any) with the new overrides
+  dbData.users[targetEmail].permissions = {
+    ...(dbData.users[targetEmail].permissions || {}),
+    ...permissions
+  };
+  
+  writeDb(dbData);
+  logEvent("USER_PERMISSIONS_CHANGED", { targetEmail, newPermissions: permissions, by: req.user.email });
+  
+  res.json({ success: true, permissions: dbData.users[targetEmail].permissions });
 });
 
 app.delete("/api/invites/:token", requireAdmin, (req, res) => {
