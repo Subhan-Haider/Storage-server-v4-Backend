@@ -2664,8 +2664,12 @@ app.post("/admin/bulk-delete", requireAuth, (req, res) => {
     try {
       if (fs.existsSync(targetPath)) {
         fs.unlinkSync(targetPath);
-        const thumbPath = path.join(THUMBNAIL_PATH, `${name}-thumb.webp`);
-        if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+      }
+      const thumbPath = path.join(THUMBNAIL_PATH, `${name}-thumb.webp`);
+      if (fs.existsSync(thumbPath)) {
+        fs.unlinkSync(thumbPath);
+      }
+      if (db.files[`${folder || "root"}/${name}`]) {
         delete db.files[`${folder || "root"}/${name}`];
         deleted++;
       }
