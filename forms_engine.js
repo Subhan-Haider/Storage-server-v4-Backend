@@ -60,7 +60,22 @@ function readForms(projectId) {
   }
 }
 
+function deleteSubmission(projectId, submissionId) {
+  const formsPath = getFormsPath(projectId);
+  if (!fs.existsSync(formsPath)) return { success: false, error: 'No forms file found' };
+  try {
+    const data = JSON.parse(fs.readFileSync(formsPath, 'utf8'));
+    const filtered = data.filter(s => s.id !== submissionId);
+    if (filtered.length === data.length) return { success: false, error: 'Submission not found' };
+    fs.writeFileSync(formsPath, JSON.stringify(filtered, null, 2));
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   recordSubmission,
-  readForms
+  readForms,
+  deleteSubmission
 };
