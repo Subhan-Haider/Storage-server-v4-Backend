@@ -4813,6 +4813,58 @@ app.post("/api/deployments/file/:id", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/deployments/commit/:id", requireAuth, async (req, res) => {
+  const { path: filePath, content, message } = req.body;
+  if (!filePath || content === undefined || !message) return res.status(400).json({ error: "Path, content, and message required" });
+
+  const project = deploymentEngine.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: "Project not found" });
+
+  const projectDir = path.join(deploymentEngine.APPS_DIR, req.params.id);
+  const targetPath = path.join(projectDir, filePath.replace(/^\//, ''));
+
+  if (!targetPath.startsWith(projectDir)) return res.status(403).json({ error: "Access denied" });
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: "Project files not found locally" });
+
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, content, "utf8");
+
+    const exec = require('child_process').exec;
+    const execute = (cmd) => new Promise((resolve, reject) => {
+      exec(cmd, { cwd: projectDir }, (err, stdout, stderr) => {
+        if (err) reject(err);
+        else resolve(stdout);
+      });
+    });
+
+    const githubIntegrations = require('./github_integrations');
+    const token = githubIntegrations.getGithubToken();
+    let remoteUrl = project.repository;
+    if (token && remoteUrl.includes("github.com") && !remoteUrl.includes("@")) {
+      remoteUrl = remoteUrl.replace("https://github.com/", `https://${token}@github.com/`);
+      await execute(`git remote set-url origin ${remoteUrl}`).catch(() => {});
+    }
+
+    await execute(`git add "${filePath.replace(/^\//, '')}"`);
+    
+    const status = await execute(`git status --porcelain`);
+    if (status.trim().length > 0) {
+      await execute(`git config user.email "lootops@example.com"`);
+      await execute(`git config user.name "LootOps Editor"`);
+      
+      const safeMessage = message.replace(/"/g, '\\"');
+      await execute(`git commit -m "${safeMessage}"`);
+      await execute(`git push origin ${project.branch}`);
+    }
+
+    res.json({ success: true, message: "Committed and pushed successfully" });
+  } catch (err) {
+    console.error("Git commit error:", err);
+    res.status(500).json({ error: err.message || "Failed to commit and push" });
+  }
+});
+
 app.get("/api/deployments/tunnel-cname", requireAuth, (req, res) => {
   res.json({ cname: cloudflareManager.getTunnelCname() });
 });
