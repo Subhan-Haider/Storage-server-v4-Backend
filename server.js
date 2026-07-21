@@ -4728,49 +4728,137 @@ app.post("/api/forms/submit/:projectId", formsUpload.none(), (req, res) => {
   if (result.success) {
     const project = deploymentEngine.getProject(projectId);
     const projectName = project ? project.name : projectId;
-
-    // --- 1. Admin notification email ---
-    let adminEmailBody = `A new form submission was received on <b>${projectName}</b>.<br><br>`;
-    adminEmailBody += `<table style="border-collapse:collapse;width:100%">`;
-    for (const [key, value] of Object.entries(payload)) {
-      adminEmailBody += `<tr><td style="padding:6px 12px;font-weight:bold;background:#f8fafc;border:1px solid #e2e8f0;width:30%">${key}</td><td style="padding:6px 12px;border:1px solid #e2e8f0">${value}</td></tr>`;
-    }
-    adminEmailBody += `</table>`;
-    sendSystemAlertEmail("📝 New Form Submission", adminEmailBody, "📝", "form_submit");
-
-    // --- 2. Confirmation email to the person who submitted the form ---
     const submitterEmail = payload.email || payload.Email || payload.EMAIL || null;
-    const submitterName = payload.name || payload.Name || payload.NAME || 'there';
+    const submitterName  = payload.name  || payload.Name  || payload.NAME  || 'there';
+    const timestamp      = new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+
+    // Build field rows helper
+    const fieldRows = Object.entries(payload)
+      .map(([k, v]) => `
+        <tr>
+          <td style="padding:12px 16px;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #f1f5f9;white-space:nowrap;width:30%">${k}</td>
+          <td style="padding:12px 16px;font-size:14px;color:#0f172a;border-bottom:1px solid #f1f5f9;word-break:break-word">${v}</td>
+        </tr>`).join('');
+
+    // ── 1. ADMIN NOTIFICATION EMAIL ─────────────────────────────────────────
+    const adminHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>New Form Submission</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:48px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);border-radius:16px 16px 0 0;padding:36px 40px;text-align:center;">
+          <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:50%;width:56px;height:56px;line-height:56px;font-size:28px;margin-bottom:16px;">📝</div>
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.3px;">New Form Submission</h1>
+          <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">${projectName}</p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#ffffff;padding:36px 40px;">
+          <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+            A new message has been submitted through your <strong style="color:#0f172a">${projectName}</strong> contact form.
+          </p>
+
+          <!-- Fields table -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #e2e8f0;">Field</th>
+                <th style="padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #e2e8f0;">Value</th>
+              </tr>
+            </thead>
+            <tbody>${fieldRows}</tbody>
+          </table>
+
+          <!-- Meta info -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;background:#f8fafc;border-radius:12px;padding:16px;border:1px solid #e2e8f0;">
+            <tr>
+              <td style="padding:6px 16px;font-size:13px;color:#64748b;">🕐 <strong>Received:</strong> ${timestamp}</td>
+            </tr>
+          </table>
+
+          <!-- CTA -->
+          <div style="text-align:center;margin-top:32px;">
+            <a href="https://storage.lootops.me/deployments/${projectId}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:14px 32px;border-radius:10px;">View in Dashboard →</a>
+          </div>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f8fafc;border-radius:0 0 16px 16px;padding:20px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;">This notification was sent by <strong>LootOps</strong> · <a href="https://storage.lootops.me" style="color:#6366f1;text-decoration:none;">storage.lootops.me</a></p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+    sendSystemAlertEmail("New Form Submission — " + projectName, adminHtml, "📝", "form_submit");
+
+    // ── 2. SUBMITTER CONFIRMATION EMAIL ─────────────────────────────────────
     if (transporter && submitterEmail) {
-      const confirmMailOptions = {
+      const confirmHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>We got your message!</title></head>
+<body style="margin:0;padding:0;background:#f0fdf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;padding:48px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#16a34a 0%,#059669 100%);border-radius:16px 16px 0 0;padding:40px;text-align:center;">
+          <div style="display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.25);border-radius:50%;width:72px;height:72px;font-size:36px;margin-bottom:20px;">✅</div>
+          <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:800;">Message Received!</h1>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">Thanks for getting in touch with us</p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#ffffff;padding:40px;">
+          <p style="margin:0 0 20px;font-size:16px;color:#0f172a;font-weight:600;">Hi ${submitterName} 👋</p>
+          <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.7;">
+            Thank you for reaching out! We've received your message and our team will get back to you as soon as possible.
+          </p>
+
+          <!-- Submission summary -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:24px;margin-bottom:28px;">
+            <p style="margin:0 0 16px;font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:0.08em;">📋 Your submission summary</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${Object.entries(payload).map(([k,v]) => `
+              <tr>
+                <td style="padding:8px 0;font-size:13px;font-weight:600;color:#166534;width:35%;vertical-align:top">${k}</td>
+                <td style="padding:8px 0;font-size:14px;color:#0f172a;word-break:break-word">${v}</td>
+              </tr>`).join('')}
+            </table>
+          </div>
+
+          <p style="margin:0;font-size:14px;color:#64748b;line-height:1.6;">
+            In the meantime, feel free to browse our website. We typically respond within <strong style="color:#0f172a">24–48 hours</strong>.
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f8fafc;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+          <p style="margin:0 0 6px;font-size:13px;color:#475569;">This confirmation was sent by <strong>${projectName}</strong></p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Powered by <a href="https://storage.lootops.me" style="color:#16a34a;text-decoration:none;font-weight:600;">LootOps</a></p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+      transporter.sendMail({
         from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: submitterEmail,
         subject: `✅ We received your message — ${projectName}`,
-        html: `
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:40px 20px;background:#f1f5f9;color:#334155;text-align:center;">
-            <div style="max-width:560px;margin:0 auto;background:#fff;padding:36px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-              <div style="background:#dcfce7;height:64px;width:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px auto;">
-                <span style="font-size:32px;">✅</span>
-              </div>
-              <h2 style="color:#166534;font-size:22px;font-weight:800;margin:0 0 8px 0;">Message Received!</h2>
-              <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px 0;">
-                Hi <strong>${submitterName}</strong>, thank you for reaching out!<br>
-                We've received your message and will get back to you as soon as possible.
-              </p>
-              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:left;margin-bottom:24px;">
-                <p style="margin:0 0 8px 0;font-size:13px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Your submission</p>
-                ${Object.entries(payload).map(([k,v]) => `<p style="margin:4px 0;font-size:14px;"><strong style="color:#0f172a">${k}:</strong> <span style="color:#475569">${v}</span></p>`).join('')}
-              </div>
-              <p style="color:#94a3b8;font-size:13px;margin:0;">This is an automated confirmation from <strong>${projectName}</strong>.</p>
-            </div>
-          </div>
-        `
-      };
-      transporter.sendMail(confirmMailOptions, (err) => {
+        html: confirmHtml
+      }, (err) => {
         if (err) console.error('[Forms] Failed to send confirmation email:', err.message);
         else console.log(`[Forms] Confirmation email sent to ${submitterEmail}`);
       });
     }
+
 
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({ success: true, redirectUrl: result.redirectUrl });
