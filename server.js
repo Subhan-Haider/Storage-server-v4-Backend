@@ -23,6 +23,7 @@ const watchdog = require("./watchdog");
 const exiftool = require("node-exiftool");
 const exiftoolBin = require("dist-exiftool");
 const deploymentEngine = require("./deployment_engine");
+const analyticsEngine = require("./analytics_engine");
 const githubIntegrations = require("./github_integrations");
 const cloudflareManager = require("./cloudflare_manager");
 
@@ -4630,8 +4631,45 @@ app.get("/admin/system/stream", requireAuth, (req, res) => {
 });
 
 // =====================
-// DEPLOYMENTS API
+// DEPLOYMENTS & ANALYTICS API
 // =====================
+
+app.get("/analytics/script.js", (req, res) => {
+  const projectId = req.query.projectId || "";
+  res.type('.js');
+  res.send(`
+    (function() {
+      if (typeof window === 'undefined') return;
+      var data = {
+        url: window.location.href,
+        ref: document.referrer || 'Direct',
+        ua: navigator.userAgent
+      };
+      var endpoint = '${process.env.STORAGE_SERVER_URL || ''}/api/analytics/track?projectId=' + '${projectId}';
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        keepalive: true
+      }).catch(function(){});
+    })();
+  `);
+});
+
+app.post("/api/analytics/track", (req, res) => {
+  const projectId = req.query.projectId;
+  if (!projectId) return res.status(400).send("No project ID");
+  
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  analyticsEngine.recordPageView(projectId, req.body, ip);
+  res.json({ success: true });
+});
+
+app.get("/api/deployments/analytics/:id", requireAuth, (req, res) => {
+  const stats = analyticsEngine.readStats(req.params.id) || null;
+  res.json({ success: true, stats });
+});
+
 app.get("/api/deployments/projects", requireAuth, (req, res) => {
   res.json(deploymentEngine.readProjects());
 });

@@ -420,6 +420,38 @@ async function deployProject(projectId) {
     // ATOMIC SWAP - Build Succeeded!
     appendLog(projectId, `Build successful! Performing atomic swap...`, "success");
 
+    // INJECT ANALYTICS
+    try {
+      const injectPaths = [
+        path.join(workingDir, "index.html"),
+        path.join(workingDir, "public", "index.html"),
+        path.join(workingDir, "dist", "index.html"),
+        path.join(workingDir, "build", "index.html")
+      ];
+      
+      const storageUrl = process.env.STORAGE_SERVER_URL || '';
+      const scriptTag = `\n    <script src="${storageUrl}/analytics/script.js?projectId=${projectId}" defer></script>\n`;
+      
+      let injected = false;
+      for (const p of injectPaths) {
+        if (fs.existsSync(p)) {
+          let html = fs.readFileSync(p, 'utf8');
+          if (!html.includes('analytics/script.js') && html.includes('</head>')) {
+            html = html.replace('</head>', scriptTag + '</head>');
+            fs.writeFileSync(p, html);
+            injected = true;
+          } else if (!html.includes('analytics/script.js') && html.includes('</body>')) {
+            html = html.replace('</body>', scriptTag + '</body>');
+            fs.writeFileSync(p, html);
+            injected = true;
+          }
+        }
+      }
+      if (injected) {
+        appendLog(projectId, `Automatically injected Visitor Analytics tracking script.`, "success");
+      }
+    } catch(e) {}
+
     // Backup current live project
     if (fs.existsSync(projectDir)) {
       const backupPath = path.join(BACKUPS_DIR, `${projectId}_last`);
