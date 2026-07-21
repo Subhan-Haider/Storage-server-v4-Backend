@@ -1506,6 +1506,7 @@ app.post("/upload", apiLimiter, requireUploadAuth, requirePermission("canUpload"
       expiresAt: null,
       exif: exifData,
       faceIds: []
+    };
     writeDb(db);
 
     logEvent("FILE_UPLOAD", { folder: folderName, name: finalFilename, size: fileSize, sha256: fileHash });
