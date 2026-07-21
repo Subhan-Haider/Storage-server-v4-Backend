@@ -2,10 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const UPLOAD_PATH = process.env.UPLOAD_PATH || path.join(__dirname, "../uploads");
+const isWindows = process.platform === 'win32';
+
+function getUploadPath() {
+  return process.env.UPLOAD_PATH || (isWindows ? path.join(__dirname, "../uploads") : "/var/www/storage/uploads");
+}
 
 function getFormsPath(projectId) {
-  return path.join(UPLOAD_PATH, "deployments", projectId, "forms.json");
+  return path.join(getUploadPath(), "deployments", projectId, "forms.json");
 }
 
 function ensureFormsFile(projectId) {
