@@ -5026,9 +5026,16 @@ app.post("/api/deployments/webhook", (req, res) => {
   const { projectId } = req.query;
   const projects = deploymentEngine.readProjects();
 
-  const recordHistory = (proj, trigger, commit) => {
+  const recordHistory = (proj, trigger, commitHash, commitMessage) => {
     const history = proj.deploymentHistory || [];
-    history.unshift({ id: crypto.randomUUID(), triggeredBy: trigger, commit: commit || null, timestamp: new Date().toISOString(), status: "building" });
+    history.unshift({ 
+      id: crypto.randomUUID(), 
+      triggeredBy: trigger, 
+      commitHash: commitHash || null, 
+      commitMessage: commitMessage || null, 
+      timestamp: new Date().toISOString(), 
+      status: "building" 
+    });
     deploymentEngine.updateProject(proj.id, { deploymentHistory: history.slice(0, 20) });
   };
 
@@ -5058,8 +5065,9 @@ app.post("/api/deployments/webhook", (req, res) => {
         return res.json({ success: false, message: "Auto-deploy is disabled for this project" });
       }
 
-      const commit = req.body?.head_commit?.message || null;
-      recordHistory(project, "deploy-hook", commit);
+      const commitHash = req.body?.head_commit?.id || null;
+      const commitMsg = req.body?.head_commit?.message || null;
+      recordHistory(project, "deploy-hook", commitHash, commitMsg);
       deploymentEngine.deployProject(projectId).then(() => {
         updateHistoryStatus(projectId, "success");
         if (project.discordNotify !== false)
@@ -5104,8 +5112,9 @@ app.post("/api/deployments/webhook", (req, res) => {
     if (matchingMainProject) {
       if (matchingMainProject.branch === branch) {
         // Normal Main Deploy
-        const commit = payload.head_commit?.message || null;
-        recordHistory(matchingMainProject, "github-push", commit);
+        const commitHash = payload.head_commit?.id || null;
+        const commitMsg = payload.head_commit?.message || null;
+        recordHistory(matchingMainProject, "github-push", commitHash, commitMsg);
         deploymentEngine.deployProject(matchingMainProject.id).then(() => {
           updateHistoryStatus(matchingMainProject.id, "success");
           if (matchingMainProject.discordNotify !== false)
